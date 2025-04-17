@@ -23,7 +23,7 @@ COPY . .
 # Make port 8000 available to the world outside this container
 # Render.com typically uses port 10000, but Gunicorn binds to 8000 here.
 # Render will map its internal port to the external one automatically.
-EXPOSE 50001
+EXPOSE 5001
 
 # Define environment variable for the Gunicorn worker count (optional, Render might set this)
 ENV WORKERS=${WORKERS:-4}
