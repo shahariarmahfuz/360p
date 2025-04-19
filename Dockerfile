@@ -1,33 +1,39 @@
-# Use an official Python runtime as a parent image
+# বেস ইমেজ হিসাবে একটি Python 3.9 slim সংস্করণ ব্যবহার করুন
 FROM python:3.9-slim
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
-# Set the working directory in the container
+# সিস্টেম প্যাকেজ আপডেট করুন এবং ffmpeg ইনস্টল করুন
+# wget এবং ca-certificates যোগ করা হল https ডাউনলোড এর জন্য (যদি প্রয়োজন হয়)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    wget \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# ওয়ার্কিং ডিরেক্টরি সেট করুন
 WORKDIR /app
 
-# Install ffmpeg - crucial for video processing
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Copy the requirements file into the container at /app
+# প্রয়োজনীয় Python লাইব্রেরি ইনস্টল করার জন্য requirements.txt কপি করুন
 COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code into the container at /app
-COPY . .
+# অ্যাপ্লিকেশনের সোর্স কোড কপি করুন
+COPY app.py .
+# যদি টেমপ্লেট ফোল্ডার ব্যবহার করেন তবে সেটাও কপি করুন (এই উদাহরণে নেই)
+# COPY templates/ templates/
 
-# Make port 8000 available to the world outside this container
-# Render.com typically uses port 10000, but Gunicorn binds to 8000 here.
-# Render will map its internal port to the external one automatically.
-EXPOSE 5001
+# ভিডিও এবং HLS ফাইল রাখার জন্য ভলিউম তৈরি করুন (ঐচ্ছিক, তবে ডেটা ধরে রাখার জন্য ভাল)
+# এই ডিরেক্টরিগুলো অ্যাপ কোডের মাধ্যমেও তৈরি হবে, তবে Dockerfile এ উল্লেখ করা ভাল অভ্যাস
+RUN mkdir -p /app/videos && mkdir -p /app/hls
+# VOLUME /app/videos
+# VOLUME /app/hls
 
-# Define environment variable for the Gunicorn worker count (optional, Render might set this)
-ENV WORKERS=${WORKERS:-4}
+# Flask অ্যাপের জন্য পোর্ট এক্সপোজ করুন (ডিফল্ট 5000)
+EXPOSE 5000
 
-# Run app.py when the container launches using Gunicorn
-# Gunicorn is a production-ready WSGI server
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "4", "app:app"]
+# কন্টেইনার চালু হলে Flask অ্যাপটি রান করার কমান্ড
+# CMD ["python", "app.py"]
+# অথবা gunicorn ব্যবহার করতে পারেন আরও ভালো পারফরম্যান্সের জন্য
+# CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "120", "app:app"]
+# যেহেতু FFmpeg একটি দীর্ঘস্থায়ী প্রসেস, একটি worker যথেষ্ট হতে পারে
+CMD ["python", "app.py"]
