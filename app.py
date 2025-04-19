@@ -3,388 +3,290 @@ import subprocess
 import threading
 import time
 import requests
-from flask import Flask, render_template_string, send_from_directory, abort
+from flask import Flask, render_template, send_from_directory, Response
+import logging
+import signal # সিগন্যাল হ্যান্ডেল করার জন্য
 
-# --- Configuration ---
-VIDEO_URLS = [
-    "https://video-lax3-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQM79nG_yaRMFQn3uqwDQYldbpHeswPjEw_--HtLuooCdTJabFO_1u-JLVNX_ZThIb6IfOAAcROQ8nrrt_4ZdoJj.mp4?strext=1&_nc_cat=110&_nc_sid=8bf8fe&_nc_ht=video-lax3-1.xx.fbcdn.net&_nc_ohc=YMPB_YdW03QQ7kNvwGGVjqT&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNjQwLnN2ZV9zZCIsInhwdl9hc3NldF9pZCI6MTEwMjgxMzgwODI0NDI3MywidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjIwNiwidXJsZ2VuX3NvdXJjZSI6Ind3dyJ9&ccb=17-1&_nc_zt=28&oh=00_AfERWi8M9NOZb7bMNyQ8hcvg3WRqmjudXhQMlsVh_LJmSw&oe=680932A4&dl=1",  # প্রথম ভিডিওর URL দিন
-    "https://video-fra5-2.xx.fbcdn.net/o1/v/t2/f2/m69/AQOTfyVVjo3KcxyTsTt4akQgRL08sEABNsb80aJfeDyjSIA7MFg7IVuaagNO7Wd3C0DRcI3Soti7lw9V8QSqMiE3.mp4?strext=1&_nc_cat=107&_nc_sid=8bf8fe&_nc_ht=video-fra5-2.xx.fbcdn.net&_nc_ohc=BqX0YpyEauAQ7kNvwHZBI3C&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNjQwLnN2ZV9zZCIsInhwdl9hc3NldF9pZCI6MTMyODc0OTExMTY2MDQwNiwidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjEyNTYsInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&_nc_zt=28&oh=00_AfEDTu9FDf3PRWyl73cYxJ7L3nPTfVOMHX6368eJSTPBJg&oe=6809636F&dl=1",  # দ্বিতীয় ভিডিওর URL দিন
-    "https://video-lax3-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQM79nG_yaRMFQn3uqwDQYldbpHeswPjEw_--HtLuooCdTJabFO_1u-JLVNX_ZThIb6IfOAAcROQ8nrrt_4ZdoJj.mp4?strext=1&_nc_cat=110&_nc_sid=8bf8fe&_nc_ht=video-lax3-1.xx.fbcdn.net&_nc_ohc=YMPB_YdW03QQ7kNvwGGVjqT&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNjQwLnN2ZV9zZCIsInhwdl9hc3NldF9pZCI6MTEwMjgxMzgwODI0NDI3MywidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjIwNiwidXJsZ2VuX3NvdXJjZSI6Ind3dyJ9&ccb=17-1&_nc_zt=28&oh=00_AfERWi8M9NOZb7bMNyQ8hcvg3WRqmjudXhQMlsVh_LJmSw&oe=680932A4&dl=1",  # তৃতীয় ভিডিওর URL দিন
-    "https://video-fra5-2.xx.fbcdn.net/o1/v/t2/f2/m69/AQOTfyVVjo3KcxyTsTt4akQgRL08sEABNsb80aJfeDyjSIA7MFg7IVuaagNO7Wd3C0DRcI3Soti7lw9V8QSqMiE3.mp4?strext=1&_nc_cat=107&_nc_sid=8bf8fe&_nc_ht=video-fra5-2.xx.fbcdn.net&_nc_ohc=BqX0YpyEauAQ7kNvwHZBI3C&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNjQwLnN2ZV9zZCIsInhwdl9hc3NldF9pZCI6MTMyODc0OTExMTY2MDQwNiwidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjEyNTYsInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&_nc_zt=28&oh=00_AfEDTu9FDf3PRWyl73cYxJ7L3nPTfVOMHX6368eJSTPBJg&oe=6809636F&dl=1",  # চতুর্থ ভিডিওর URL দিন
-    "https://video-lax3-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQM79nG_yaRMFQn3uqwDQYldbpHeswPjEw_--HtLuooCdTJabFO_1u-JLVNX_ZThIb6IfOAAcROQ8nrrt_4ZdoJj.mp4?strext=1&_nc_cat=110&_nc_sid=8bf8fe&_nc_ht=video-lax3-1.xx.fbcdn.net&_nc_ohc=YMPB_YdW03QQ7kNvwGGVjqT&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNjQwLnN2ZV9zZCIsInhwdl9hc3NldF9pZCI6MTEwMjgxMzgwODI0NDI3MywidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjIwNiwidXJsZ2VuX3NvdXJjZSI6Ind3dyJ9&ccb=17-1&_nc_zt=28&oh=00_AfERWi8M9NOZb7bMNyQ8hcvg3WRqmjudXhQMlsVh_LJmSw&oe=680932A4&dl=1"   # পঞ্চম ভিডিওর URL দিন
-    # প্রয়োজনে আরও URL যোগ করুন
+# --- কনফিগারেশন ---
+# আপনার ৫টি ভিডিওর আসল লিঙ্ক এখানে যোগ করুন
+VIDEO_LINKS = [
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+    # "আপনার ভিডিও লিঙ্ক ১",
+    # "আপনার ভিডিও লিঙ্ক ২",
+    # "আপনার ভিডিও লিঙ্ক ৩",
+    # "আপনার ভিডিও লিঙ্ক ৪",
+    # "আপনার ভিডিও লিঙ্ক ৫",
 ]
-VIDEO_FOLDER = "videos"  # ভিডিও ডাউনলোড করার ফোল্ডার
-HLS_FOLDER = "hls"      # HLS স্ট্রিম ফাইল রাখার ফোল্ডার
-FFMPEG_PATH = "ffmpeg"  # ffmpeg এর পাথ (Docker এ সাধারণত শুধু নামই যথেষ্ট)
-SEGMENT_TIME = 4        # HLS সেগমেন্টের দৈর্ঘ্য (সেকেন্ড)
-PLAYLIST_LENGTH = 5     # প্লেলিস্টে কতগুলো সেগমেন্ট রাখা হবে
+VIDEO_DIR = "videos"
+HLS_DIR = os.path.join("static", "hls")
+PLAYLIST_FILE = "playlist.txt" # FFmpeg কনক্যাটেনেশনের জন্য প্লেলিস্ট
 
-# --- Flask App Setup ---
-app = Flask(__name__)
-app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0 # ব্রাউজার ক্যাশিং বন্ধ করতে
+# ডিরেক্টরিগুলো তৈরি করুন যদি না থাকে
+os.makedirs(VIDEO_DIR, exist_ok=True)
+os.makedirs(HLS_DIR, exist_ok=True)
 
-# গ্লোবাল ভেরিয়েবল ffmpeg প্রসেস ট্র্যাক করার জন্য
+# লগিং সেটআপ
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- গ্লোবাল ভেরিয়েবল ---
 ffmpeg_process = None
-ffmpeg_thread = None
-stop_ffmpeg_event = threading.Event()
+available_videos = [] # ডাউনলোড হওয়া ভিডিও ফাইলের পাথ
+lock = threading.Lock() # গ্লোবাল ভেরিয়েবল অ্যাক্সেস নিয়ন্ত্রণের জন্য
+stop_event = threading.Event() # থ্রেড বন্ধ করার জন্য সিগন্যাল
 
-# --- Helper Functions ---
-
-def create_directories():
-    """প্রয়োজনীয় ফোল্ডার তৈরি করে"""
-    os.makedirs(VIDEO_FOLDER, exist_ok=True)
-    os.makedirs(HLS_FOLDER, exist_ok=True)
-
-def download_video(url, filepath):
-    """একটি ভিডিও URL থেকে ডাউনলোড করে"""
-    print(f"Downloading {url} to {filepath}...")
-    try:
-        response = requests.get(url, stream=True, timeout=300) # টাইমআউট যোগ করা হল
-        response.raise_for_status()  # HTTP error থাকলে exception raise করবে
-        with open(filepath, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print(f"Successfully downloaded {filepath}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"Error downloading {url}: {e}")
-        # যদি ফাইল আংশিক ডাউনলোড হয়ে থাকে, সেটা মুছে ফেলা ভাল
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        return False
-    except Exception as e:
-        print(f"An unexpected error occurred during download of {url}: {e}")
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        return False
-
-
-def download_all_videos():
-    """সবগুলো ভিডিও ডাউনলোড করে এবং ফাইলের পাথ লিস্ট রিটার্ন করে"""
-    downloaded_files = []
-    create_directories()
-    for i, url in enumerate(VIDEO_URLS):
-        # ফাইলের নাম URL থেকে অনুমান করার চেষ্টা করা বা একটি জেনেরিক নাম দেওয়া
-        try:
-            filename = url.split('/')[-1].split('?')[0] # URL থেকে ফাইলের নাম বের করার চেষ্টা
-            if not filename or '.' not in filename: # যদি নাম না পাওয়া যায় বা এক্সটেনশন না থাকে
-                 filename = f"video_{i+1}.mp4" # একটি জেনেরিক নাম দিন
-        except Exception:
-             filename = f"video_{i+1}.mp4"
-
-        filepath = os.path.join(VIDEO_FOLDER, filename)
-
-        # যদি ফাইল আগে থেকে না থাকে তবেই ডাউনলোড করুন
-        if not os.path.exists(filepath):
-            if not download_video(url, filepath):
-                 print(f"Skipping {url} due to download error.")
-                 continue # ডাউনলোড ফেইল করলে পরেরটায় যাও
-        else:
-            print(f"Video {filepath} already exists. Skipping download.")
-
-        # ডাউনলোড সফল হলে বা আগে থেকেই থাকলে লিস্টে যোগ করুন
-        if os.path.exists(filepath):
-             downloaded_files.append(filepath)
-
-    if not downloaded_files:
-        print("Error: No videos could be downloaded or found. Streaming cannot start.")
-        return None
-
-    return downloaded_files
-
-def create_ffmpeg_playlist(video_files):
-    """FFmpeg এর জন্য কনক্যাটেনেশন প্লেলিস্ট ফাইল তৈরি করে"""
-    playlist_path = os.path.join(VIDEO_FOLDER, "playlist.txt")
-    with open(playlist_path, "w", encoding='utf-8') as f:
-        for video_file in video_files:
-            # ফাইলের পাথে স্পেশাল ক্যারেক্টার থাকলে সমস্যা হতে পারে, তাই quote করা হচ্ছে
-            # pathlib ব্যবহার করলে এটি আরও সহজ হতে পারে, কিন্তু os.path দিয়েও কাজ চালানো যায়
-            # single quote ব্যবহার করা যাক ffmpeg এর জন্য
-            # উইন্ডোজে পাথ সেপারেটর '\' কে '/' দিয়ে বদলানো ভালো
-            safe_path = video_file.replace('\\', '/')
-            f.write(f"file '{safe_path}'\n")
-    return playlist_path
-
-def run_ffmpeg(playlist_path):
-    """FFmpeg চালিয়ে HLS স্ট্রিম তৈরি করে"""
-    global ffmpeg_process
-    hls_output = os.path.join(HLS_FOLDER, "stream.m3u8")
-
-    # পুরানো HLS ফাইল মুছে ফেলা (যদি থাকে)
-    if os.path.exists(HLS_FOLDER):
-        for filename in os.listdir(HLS_FOLDER):
-            file_path = os.path.join(HLS_FOLDER, filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-            except Exception as e:
-                print(f"Error deleting old HLS file {file_path}: {e}")
-
-    # FFmpeg কমান্ড তৈরি
-    # -re: নেটিভ ফ্রেমরেটে পড়ার চেষ্টা করে (লাইভ সিমুলেশনের জন্য গুরুত্বপূর্ণ)
-    # -fflags +genpts: PTS (Presentation Timestamp) জেনারেট করে যদি ইনপুটে না থাকে
-    # -stream_loop -1: ইনপুট ফাইলগুলো শেষ হলে আবার প্রথম থেকে শুরু করবে (concat demuxer এর সাথে)
-    # -c copy: যদি সম্ভব হয় ভিডিও/অডিও কোডেক কপি করবে (দ্রুততর), এনকোডিং প্রয়োজন হলে এটি পরিবর্তন করতে হবে (যেমন: -c:v libx264 -c:a aac)
-    # -hls_flags delete_segments: পুরনো সেগমেন্ট ডিলিট করবে
-    # -hls_time: সেগমেন্টের দৈর্ঘ্য
-    # -hls_list_size: প্লেলিস্টে কতগুলো সেগমেন্টের এন্ট্রি থাকবে
-    command = [
-        FFMPEG_PATH,
-        '-re',                   # রিয়েল টাইমে পড়ার চেষ্টা
-        '-fflags', '+genpts',    # টাইমস্ট্যাম্প জেনারেট করা
-        '-stream_loop', '-1',    # কনক্যাটেনেশন করা ফাইলগুলো লুপ করবে
-        '-f', 'concat',          # কনক্যাটেনেশন ফরম্যাট ব্যবহার করা
-        '-safe', '0',            # অনিরাপদ ফাইল নেম (যেমন 절대 পাথ) ব্যবহারের অনুমতি
-        '-i', playlist_path,     # ইনপুট প্লেলিস্ট ফাইল
-        # '-c', 'copy',            # কোডেক কপি করার চেষ্টা (যদি সম্ভব না হয়, এনকোড করতে হবে)
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', # ভিডিও এনকোডিং (যদি দরকার হয়)
-        '-c:a', 'aac', '-b:a', '128k', # অডিও এনকোডিং (যদি দরকার হয়)
-        '-f', 'hls',             # আউটপুট ফরম্যাট HLS
-        '-hls_time', str(SEGMENT_TIME),        # সেগমেন্টের দৈর্ঘ্য
-        '-hls_list_size', str(PLAYLIST_LENGTH), # প্লেলিস্টের সাইজ
-        '-hls_flags', 'delete_segments+independent_segments', # পুরনো সেগমেন্ট ডিলিট করা এবং সেগমেন্ট স্বাধীন করা
-        '-hls_segment_filename', os.path.join(HLS_FOLDER, 'segment%03d.ts'), # সেগমেন্ট ফাইলের নাম
-        hls_output               # মাস্টার প্লেলিস্ট ফাইলের আউটপুট পাথ
-    ]
-
-    print("Starting FFmpeg process...")
-    print(f"Command: {' '.join(command)}") # কমান্ডটি প্রিন্ট করা
-
-    # subprocess.PIPE ব্যবহার করে আউটপুট ক্যাপচার করা যেতে পারে ডিবাগিং এর জন্য
-    # stdin=subprocess.DEVNULL ব্যবহার করা হচ্ছে যাতে ffmpeg কোনো ইনপুটের জন্য অপেক্ষা না করে
-    ffmpeg_process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    # FFmpeg এর আউটপুট পড়ার জন্য আলাদা থ্রেড (ঐচ্ছিক, ডিবাগিং এর জন্য)
-    def log_output(pipe, pipe_name):
-        try:
-            # পাইপ থেকে UTF-8 হিসাবে ডিকোড করার চেষ্টা করুন, যদি ব্যর্থ হয় তাহলে বাইট হিসাবে লগ করুন
-            for line in iter(pipe.readline, b''):
-                 try:
-                     print(f"FFmpeg {pipe_name}: {line.decode('utf-8').strip()}")
-                 except UnicodeDecodeError:
-                     print(f"FFmpeg {pipe_name} (bytes): {line.strip()}")
-                 if stop_ffmpeg_event.is_set():
-                     break
-        except Exception as e:
-             print(f"Error reading FFmpeg {pipe_name}: {e}")
-        finally:
-             pipe.close()
-
-
-    stdout_thread = threading.Thread(target=log_output, args=(ffmpeg_process.stdout, "stdout"))
-    stderr_thread = threading.Thread(target=log_output, args=(ffmpeg_process.stderr, "stderr"))
-    stdout_thread.start()
-    stderr_thread.start()
-
-    # FFmpeg প্রসেস শেষ হওয়ার জন্য অপেক্ষা করা (যদি প্রয়োজন হয়)
-    # এখানে আমরা অপেক্ষা করবো না কারণ এটি একটি দীর্ঘস্থায়ী প্রক্রিয়া হবে
-    # পরিবর্তে, আমরা এটিকে ব্যাকগ্রাউন্ডে চলতে দেব এবং প্রয়োজনে বন্ধ করব
-
-    # অপেক্ষা করা এবং চেক করা যে প্রসেস চলছে কিনা
-    while not stop_ffmpeg_event.is_set():
-        if ffmpeg_process.poll() is not None: # প্রসেস কি শেষ হয়ে গেছে?
-            print(f"FFmpeg process terminated unexpectedly with code {ffmpeg_process.returncode}.")
-            # এখানে রিস্টার্ট করার লজিক যোগ করা যেতে পারে
-            break
-        time.sleep(1) # কিছুক্ষণ পর পর চেক করা
-
-    print("FFmpeg runner thread finished.")
-    # থ্রেড শেষ হলে লগিং থ্রেডগুলোও শেষ হয়েছে নিশ্চিত করা
-    stdout_thread.join(timeout=2)
-    stderr_thread.join(timeout=2)
-
-
-def start_streaming_process():
-    """ভিডিও ডাউনলোড করে এবং FFmpeg স্ট্রিম শুরু করে"""
-    global ffmpeg_thread
-    print("Attempting to start streaming process...")
-    video_files = download_all_videos()
-    if not video_files:
-        print("Could not download any videos. Aborting stream start.")
-        return False
-
-    playlist_path = create_ffmpeg_playlist(video_files)
-    if not playlist_path:
-        print("Could not create playlist file. Aborting stream start.")
-        return False
-
-    # যদি আগে থেকেই কোনো FFmpeg থ্রেড চলে, তবে এটিকে থামানোর চেষ্টা করুন
-    stop_streaming_process()
-
-    # নতুন FFmpeg প্রসেস শুরু করার জন্য থ্রেড তৈরি করুন
-    stop_ffmpeg_event.clear() # ইভেন্ট রিসেট করুন
-    ffmpeg_thread = threading.Thread(target=run_ffmpeg, args=(playlist_path,), daemon=True)
-    ffmpeg_thread.start()
-    print("FFmpeg streaming thread started.")
-    # স্ট্রীম শুরু হওয়ার জন্য কিছুক্ষণ অপেক্ষা করা যেতে পারে
-    time.sleep(5) # যেমন ৫ সেকেন্ড
-    # চেক করা যাক HLS ফাইল তৈরি হয়েছে কিনা
-    if not os.path.exists(os.path.join(HLS_FOLDER, "stream.m3u8")):
-         print("Warning: HLS manifest file not found after starting FFmpeg. Stream might not be ready.")
-         # এখানে আরও শক্তিশালী চেকিং যোগ করা যেতে পারে
-    else:
-         print("HLS manifest file found. Stream should be accessible.")
-    return True
-
-
-def stop_streaming_process():
-    """চলমান FFmpeg প্রসেস এবং থ্রেড বন্ধ করে"""
-    global ffmpeg_process, ffmpeg_thread
-    if ffmpeg_process and ffmpeg_process.poll() is None: # যদি প্রসেস থাকে এবং চলছে
-        print("Stopping existing FFmpeg process...")
-        stop_ffmpeg_event.set() # থ্রেডকে থামার সিগন্যাল দিন
-        try:
-            ffmpeg_process.terminate() # প্রথমে টার্মিনেট করার চেষ্টা
-            ffmpeg_process.wait(timeout=5) # ৫ সেকেন্ড অপেক্ষা
-            print("FFmpeg process terminated.")
-        except subprocess.TimeoutExpired:
-            print("FFmpeg process did not terminate gracefully, killing...")
-            ffmpeg_process.kill() # যদি না হয় তবে কিল করুন
-            ffmpeg_process.wait() # নিশ্চিত করুন এটি বন্ধ হয়েছে
-            print("FFmpeg process killed.")
-        except Exception as e:
-            print(f"Error stopping FFmpeg process: {e}")
-        ffmpeg_process = None
-
-    if ffmpeg_thread and ffmpeg_thread.is_alive():
-         print("Waiting for FFmpeg thread to finish...")
-         ffmpeg_thread.join(timeout=10) # থ্রেড শেষ হওয়ার জন্য অপেক্ষা
-         if ffmpeg_thread.is_alive():
-             print("FFmpeg thread did not finish cleanly.")
-         else:
-             print("FFmpeg thread finished.")
-         ffmpeg_thread = None
-    stop_ffmpeg_event.clear() # ইভেন্ট রিসেট করুন
-
-
-# --- Flask Routes ---
+# --- ফ্লাস্ক অ্যাপ ---
+app = Flask(__name__)
 
 @app.route('/')
 def index():
-    """HTML পেজ দেখায় যেখানে ভিডিও প্লেয়ার থাকবে"""
-    # নিশ্চিত করুন যে 스트িম চলছে
-    if ffmpeg_thread is None or not ffmpeg_thread.is_alive():
-         print("FFmpeg thread is not running. Attempting to start stream for request.")
-         if not start_streaming_process():
-              return "Error: Could not start the video stream. Check logs.", 500
+    """প্রধান HTML পেজ পরিবেশন করে।"""
+    return render_template('index.html')
 
+# স্ট্যাটিক ফাইল (HLS সেগমেন্ট) পরিবেশনের জন্য ফ্লাস্ক ডিফল্ট রুট ব্যবহার করবে
+# /static/hls/...
 
-    # HLS.js ব্যবহার করে একটি সাধারণ HTML পেজ
-    # বিকল্প: Video.js ব্যবহার করা যেতে পারে
-    html_content = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Live Channel</title>
-        <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-        <style>
-            body { margin: 0; background-color: #000; }
-            video { width: 100%; height: 100vh; }
-        </style>
-    </head>
-    <body>
-        <video id="video" controls autoplay muted></video>
-        <script>
-            var video = document.getElementById('video');
-            var hlsUrl = '/hls/stream.m3u8'; // আমাদের HLS স্ট্রিমের URL
+# --- হেল্পার ফাংশন ---
+def download_video(url, index):
+    """একটি ভিডিও ডাউনলোড করে।"""
+    filename = os.path.join(VIDEO_DIR, f"video_{index}.mp4")
+    filepath = os.path.abspath(filename) # সম্পূর্ণ পাথ নিন
 
-            // প্রথমে চেক করুন ব্রাউজার নিজে HLS সাপোর্ট করে কিনা
-            if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = hlsUrl;
-                video.addEventListener('loadedmetadata', function() {
-                    // Autoplay করার চেষ্টা করুন, Muted থাকা অবস্থায় সাধারণত কাজ করে
-                    video.play().catch(e => console.error("Autoplay failed:", e));
-                });
-                console.log("Using native HLS support.");
-            }
-            // যদি না করে, এবং Hls.js লোড হয়ে থাকে, তবে Hls.js ব্যবহার করুন
-            else if (Hls.isSupported()) {
-                var hls = new Hls({
-                     // প্রয়োজন অনুযায়ী HLS.js কনফিগারেশন যোগ করুন
-                     // যেমন, লাইভ স্ট্রিমের জন্য কিছু ডিফল্ট ভ্যালু পরিবর্তন করা লাগতে পারে
-                     liveSyncDurationCount: 3, // কতগুলো সেগমেন্ট ধরে লাইভ এজ এর সাথে সিনক্রোনাইজ করার চেষ্টা করবে
-                     liveMaxLatencyDurationCount: 5 // কতগুলো সেগমেন্ট পর্যন্ত ল্যাটেন্সি গ্রহণ করবে
-                });
-                hls.loadSource(hlsUrl);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    console.log("HLS.js manifest parsed.");
-                    // Autoplay করার চেষ্টা করুন
-                    video.play().catch(e => console.error("Autoplay failed:", e));
-                });
-                hls.on(Hls.Events.ERROR, function(event, data) {
-                    console.error('HLS.js error:', data);
-                    // এখানে এরর হ্যান্ডলিং যোগ করা যেতে পারে, যেমন স্ট্রিম রিলোড করার চেষ্টা
-                    if (data.fatal) {
-                        switch(data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                console.log("Fatal network error encountered, trying to recover...");
-                                hls.startLoad(); // আবার লোড করার চেষ্টা
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                console.log("Fatal media error encountered, trying to recover...");
-                                hls.recoverMediaError();
-                                break;
-                            default:
-                                // আনরিকভারেবল এরর, hls destroy করা হতে পারে
-                                console.log("Unrecoverable HLS error, destroying HLS instance.");
-                                hls.destroy();
-                                break;
-                        }
-                    }
-                });
-                 console.log("Using HLS.js for playback.");
-            } else {
-                alert("Sorry, your browser does not support HLS playback.");
-            }
+    # যদি ফাইল আগে থেকেই থাকে, ডাউনলোড করার দরকার নেই
+    if os.path.exists(filepath):
+        logging.info(f"ভিডিও {index+1} ({filepath}) আগে থেকেই ডাউনলোড করা আছে।")
+        return filepath
 
-            // ভিডিও আনমিউট করার জন্য একটি বাটন যোগ করা যেতে পারে কারণ অনেক ব্রাউজার অটো প্লে মিউট ছাড়া করতে দেয় না
-            // document.body.addEventListener('click', () => { video.muted = false; }, { once: true });
-
-        </script>
-    </body>
-    </html>
-    """
-    return render_template_string(html_content)
-
-@app.route('/hls/<path:filename>')
-def hls_files(filename):
-    """HLS প্লেলিস্ট (.m3u8) এবং সেগমেন্ট (.ts) ফাইল পরিবেশন করে"""
-    hls_dir = os.path.abspath(HLS_FOLDER)
     try:
-        # send_from_directory ব্যবহার করে নিরাপদভাবে ফাইল পরিবেশন করা
-        # Cache কন্ট্রোল হেডার যোগ করা যাতে ব্রাউজার সবসময় নতুন ফাইল নেয়
-        response = send_from_directory(hls_dir, filename)
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-        return response
-    except FileNotFoundError:
-        print(f"HLS file not found: {filename}")
-        abort(404)
+        logging.info(f"ভিডিও {index+1} ডাউনলোড শুরু হচ্ছে: {url}")
+        response = requests.get(url, stream=True, timeout=300) # টাইমআউট যোগ করা ভালো
+        response.raise_for_status()  # HTTP एरর চেক করুন
+        with open(filepath, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        logging.info(f"ভিডিও {index+1} ডাউনলোড সম্পন্ন: {filepath}")
+        return filepath
+    except requests.exceptions.RequestException as e:
+        logging.error(f"ভিডিও {index+1} ডাউনলোড ব্যর্থ ({url}): {e}")
+        # আংশিক ডাউনলোড হওয়া ফাইল মুছে ফেলুন (যদি থাকে)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError as rm_err:
+                logging.error(f"আংশিক ফাইল মুছতে ব্যর্থ ({filepath}): {rm_err}")
+        return None
     except Exception as e:
-        print(f"Error serving HLS file {filename}: {e}")
-        abort(500)
+        logging.error(f"ভিডিও {index+1} ডাউনলোড করার সময় অপ্রত্যাশিত ত্রুটি: {e}")
+        if os.path.exists(filepath):
+             try:
+                os.remove(filepath)
+             except OSError as rm_err:
+                logging.error(f"ত্রুটির পর ফাইল মুছতে ব্যর্থ ({filepath}): {rm_err}")
+        return None
+
+def manage_downloads_and_stream():
+    """ভিডিও ডাউনলোড এবং FFmpeg স্ট্রিম ম্যানেজ করে।"""
+    global available_videos, ffmpeg_process
+
+    processed_indices = set() # কোন ভিডিওগুলো ইতিমধ্যে প্রসেস করা হয়েছে
+
+    while not stop_event.is_set():
+        new_video_added = False
+        current_video_paths = []
+
+        for i, url in enumerate(VIDEO_LINKS):
+            if i in processed_indices:
+                 # যদি আগে প্রসেস করা হয়, পাথ যোগ করুন
+                 potential_path = os.path.abspath(os.path.join(VIDEO_DIR, f"video_{i}.mp4"))
+                 if potential_path in available_videos:
+                     current_video_paths.append(potential_path)
+                 continue # পরের লিঙ্কে যান
+
+            video_path = download_video(url, i)
+
+            if video_path:
+                with lock:
+                    if video_path not in available_videos:
+                        available_videos.append(video_path)
+                        available_videos.sort() # ফাইল নামের ক্রমানুসারে সাজান
+                        new_video_added = True
+                        logging.info(f"প্লেলিস্টে যুক্ত হয়েছে: {video_path} (মোট: {len(available_videos)})")
+                processed_indices.add(i) # এই ইনডেক্স প্রসেস করা হয়েছে
+                current_video_paths.append(video_path)
+            else:
+                # ডাউনলোড ব্যর্থ হলে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করতে পারে
+                logging.warning(f"ভিডিও {i+1} ডাউনলোড করা যায়নি, পরে আবার চেষ্টা করা হবে।")
+                # এখানে ব্রেক না করে লুপ চলতে থাকবে, পরেরবার আবার চেষ্টা করবে
+
+        # যদি নতুন ভিডিও যোগ হয় বা 처음 স্ট্রিম শুরু করার সময়
+        if new_video_added or (not ffmpeg_process and available_videos):
+             with lock:
+                 # available_videos থেকে বর্তমান পাথগুলো নিন
+                 paths_to_stream = list(available_videos)
+
+             if paths_to_stream:
+                 logging.info(f"FFmpeg স্ট্রিম আপডেট করা হচ্ছে {len(paths_to_stream)} টি ভিডিও দিয়ে।")
+                 stop_ffmpeg_stream() # পুরানো স্ট্রিম বন্ধ করুন (যদি থাকে)
+                 start_ffmpeg_stream(paths_to_stream) # নতুন স্ট্রিম শুরু করুন
+             else:
+                 logging.info("এখনও কোনো ভিডিও স্ট্রিমিংয়ের জন্য উপলব্ধ নেই।")
+
+        # যদি সব ভিডিও প্রসেস করা হয়ে যায়, তাহলে লুপ থেকে বের হয়ে যেতে পারে বা শুধু অপেক্ষা করতে পারে
+        if len(processed_indices) == len(VIDEO_LINKS):
+            logging.info("সকল ভিডিও লিঙ্ক প্রসেস করা হয়েছে। ডাউনলোড ম্যানেজার এখন নিষ্ক্রিয় থাকবে।")
+            break # লুপ থেকে বের হয়ে যান
+
+        # যদি কোনো নতুন ভিডিও যোগ না হয় এবং সবগুলো ডাউনলোড না হয়ে থাকে, কিছুক্ষণ অপেক্ষা করুন
+        if not new_video_added and len(processed_indices) < len(VIDEO_LINKS):
+             time.sleep(30) # ৩০ সেকেন্ড পর আবার চেক করুন
+
+    logging.info("ডাউনলোড এবং স্ট্রীম ম্যানেজমেন্ট থ্রেড শেষ হচ্ছে।")
 
 
-# --- Main Execution ---
+def start_ffmpeg_stream(video_files):
+    """প্রদত্ত ভিডিও ফাইলগুলো ব্যবহার করে FFmpeg স্ট্রিম শুরু করে।"""
+    global ffmpeg_process
+    if not video_files:
+        logging.warning("স্ট্রিমিংয়ের জন্য কোনো ভিডিও ফাইল নেই।")
+        return
+
+    # 1. FFmpeg concat demuxer এর জন্য প্লেলিস্ট ফাইল তৈরি করুন
+    playlist_content = ""
+    for video_path in video_files:
+        # ফাইলের পাথগুলো সঠিকভাবে ফরম্যাট করুন (স্পেস বা বিশেষ অক্ষর থাকলে)
+        # 'safe 0' অপশন ব্যবহার করলে এটি সাধারণত প্রয়োজন হয় না, তবে ভালো অভ্যাস
+        escaped_path = video_path.replace("'", "'\\''") # সিঙ্গেল কোট এস্কেপ করুন
+        playlist_content += f"file '{escaped_path}'\n"
+
+    try:
+        with open(PLAYLIST_FILE, "w", encoding='utf-8') as f:
+            f.write(playlist_content)
+        logging.info(f"{PLAYLIST_FILE} তৈরি হয়েছে {len(video_files)} টি ভিডিওর জন্য।")
+    except IOError as e:
+        logging.error(f"প্লেলিস্ট ফাইল ({PLAYLIST_FILE}) লিখতে ব্যর্থ: {e}")
+        return
+
+    # HLS ডিরেক্টরি পরিষ্কার করুন (আগের সেগমেন্ট মুছে ফেলুন)
+    logging.info(f"HLS ডিরেক্টরি পরিষ্কার করা হচ্ছে: {HLS_DIR}")
+    for filename in os.listdir(HLS_DIR):
+        if filename.endswith(('.m3u8', '.ts')):
+            try:
+                os.remove(os.path.join(HLS_DIR, filename))
+            except OSError as e:
+                logging.error(f"পুরানো HLS ফাইল মুছতে ত্রুটি ({filename}): {e}")
+
+    # 2. FFmpeg কমান্ড তৈরি করুন
+    ffmpeg_cmd = [
+        'ffmpeg',
+        '-re',                      # নেটিভ ফ্রেম রেটে ইনপুট পড়ুন (লাইভের জন্য গুরুত্বপূর্ণ)
+        '-f', 'concat',             # concat demuxer ব্যবহার করুন
+        '-safe', '0',               # প্লেলিস্টে অনিরাপদ পাথ ব্যবহারের অনুমতি দিন
+        '-stream_loop', '-1',       # প্লেলিস্টটি অসীমভাবে লুপ করুন
+        '-i', PLAYLIST_FILE,        # ইনপুট প্লেলিস্ট ফাইল
+        '-map', '0',                # ইনপুট থেকে সব স্ট্রিম ম্যাপ করুন (ভিডিও, অডিও)
+        '-c', 'copy',               # কোডেক কপি করুন (দ্রুত, কম সিপিইউ ব্যবহার; যদি ভিডিওগুলো সামঞ্জস্যপূর্ণ হয়)
+                                    # অসামঞ্জস্যপূর্ণ হলে রি-এনকোড করুন: '-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k'
+        '-f', 'hls',                # আউটপুট ফরম্যাট HLS
+        '-hls_time', '4',           # প্রতিটি সেগমেন্টের সময়কাল (সেকেন্ড)
+        '-hls_list_size', '5',      # প্লেলিস্টে সেগমেন্টের সংখ্যা
+        '-hls_flags', 'delete_segments+append_list', # পুরানো সেগমেন্ট মুছুন, নতুন যোগ করুন
+        '-hls_segment_filename', os.path.join(HLS_DIR, 'segment%03d.ts'), # সেগমেন্ট ফাইলের নাম প্যাটার্ন
+        os.path.join(HLS_DIR, 'live.m3u8') # মাস্টার প্লেলিস্ট ফাইলের নাম
+    ]
+
+    logging.info(f"FFmpeg চালু হচ্ছে: {' '.join(ffmpeg_cmd)}")
+    try:
+        # stderr লগ করার জন্য পাইপ ব্যবহার করুন
+        ffmpeg_process = subprocess.Popen(
+            ffmpeg_cmd,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL, # stdout উপেক্ষা করুন
+            text=True, # stderr টেক্সট হিসাবে ডিকোড করুন
+            bufsize=1, # লাইন বাফার্ড
+            universal_newlines=True
+        )
+        # FFmpeg এর আউটপুট লগ করার জন্য একটি ডেমন থ্রেড চালু করুন
+        stderr_thread = threading.Thread(target=log_ffmpeg_output, args=(ffmpeg_process.stderr,), daemon=True)
+        stderr_thread.start()
+        logging.info(f"FFmpeg প্রসেস শুরু হয়েছে (PID: {ffmpeg_process.pid})। {len(video_files)} টি ভিডিও লুপে স্ট্রিমিং হচ্ছে।")
+
+    except FileNotFoundError:
+        logging.error("ffmpeg কমান্ড পাওয়া যায়নি। FFmpeg ইনস্টল করা আছে এবং PATH এ আছে কিনা নিশ্চিত করুন।")
+        ffmpeg_process = None
+    except Exception as e:
+        logging.error(f"FFmpeg চালু করতে ব্যর্থ: {e}")
+        ffmpeg_process = None
+
+def log_ffmpeg_output(pipe):
+    """FFmpeg এর stderr থেকে আউটপুট পড়ে এবং লগ করে।"""
+    try:
+        for line in iter(pipe.readline, ''):
+            # লগিং লেভেল ডিবাগ রাখুন যাতে বেশি ভার্বোস না হয়
+            logging.debug(f"FFmpeg: {line.strip()}")
+        pipe.close()
+    except Exception as e:
+        logging.error(f"FFmpeg আউটপুট পড়তে ত্রুটি: {e}")
+    logging.info("FFmpeg আউটপুট মনিটরিং থ্রেড শেষ হয়েছে।")
+
+
+def stop_ffmpeg_stream():
+    """চলমান FFmpeg প্রসেসটি সাবধানে বন্ধ করে।"""
+    global ffmpeg_process
+    if ffmpeg_process and ffmpeg_process.poll() is None:
+        logging.info(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) বন্ধ করার চেষ্টা চলছে...")
+        try:
+            # প্রথমে SIGTERM পাঠান যাতে নিজে থেকে বন্ধ হতে পারে
+            ffmpeg_process.terminate()
+            # নির্দিষ্ট সময় পর্যন্ত অপেক্ষা করুন
+            ffmpeg_process.wait(timeout=10)
+            logging.info(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) বন্ধ হয়েছে।")
+        except subprocess.TimeoutExpired:
+            logging.warning(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) নিজে থেকে বন্ধ হয়নি। SIGKILL পাঠানো হচ্ছে।")
+            ffmpeg_process.kill()
+            ffmpeg_process.wait() # kill করার পর অপেক্ষা করুন
+            logging.info(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) kill করা হয়েছে।")
+        except Exception as e:
+             logging.error(f"FFmpeg প্রসেস বন্ধ করতে ত্রুটি: {e}")
+        ffmpeg_process = None
+    elif ffmpeg_process:
+         # যদি প্রসেস আগে থেকেই বন্ধ হয়ে গিয়ে থাকে
+         logging.info("FFmpeg প্রসেস আগে থেকেই বন্ধ ছিল।")
+         ffmpeg_process = None
+
+
+# --- সিগন্যাল হ্যান্ডলার ---
+def signal_handler(signum, frame):
+    """অ্যাপ্লিকেশন বন্ধ করার সিগন্যাল হ্যান্ডেল করে।"""
+    logging.info("বন্ধ করার সিগন্যাল পাওয়া গেছে। অ্যাপ্লিকেশন বন্ধ করা হচ্ছে...")
+    stop_event.set() # ব্যাকগ্রাউন্ড থ্রেডকে বন্ধ হতে বলুন
+    stop_ffmpeg_stream() # FFmpeg বন্ধ করুন
+    # প্রয়োজনে অন্যান্য রিসোর্স ক্লিনআপ করুন
+    # sys.exit(0) # প্রস্থান করুন (Flask এটি নিজে হ্যান্ডেল করতে পারে)
+
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C হ্যান্ডেল করুন
+signal.signal(signal.SIGTERM, signal_handler) # ডকার স্টপ হ্যান্ডেল করুন
+
+# --- প্রধান এক্সিকিউশন ---
 if __name__ == '__main__':
-    # অ্যাপ শুরু হওয়ার সময় একবার স্ট্রিম চালু করার চেষ্টা করুন
-    if not start_streaming_process():
-         print("Failed to start initial streaming process. The server will run, but the stream might not be available until manually triggered or restarted.")
-         # আপনি এখানে অ্যাপ বন্ধ করে দিতে পারেন যদি স্ট্রিম শুরু না হলে চালানোর মানে না থাকে
-         # import sys
-         # sys.exit(1)
+    logging.info("লাইভ স্ট্রিম অ্যাপ্লিকেশন চালু হচ্ছে...")
 
-    # Flask অ্যাপটি 0.0.0.0 তে রান করানো হচ্ছে যাতে Docker কন্টেইনারের বাইরে থেকেও অ্যাক্সেস করা যায়
-    # debug=False ব্যবহার করা উচিত প্রোডাকশনের জন্য বা যখন ব্যাকগ্রাউন্ড থ্রেড ব্যবহার করা হচ্ছে
-    # use_reloader=False ব্যবহার করা গুরুত্বপূর্ণ যখন ব্যাকগ্রাউন্ড থ্রেড বা প্রসেস চালানো হচ্ছে,
-    # কারণ রিলোডার অ্যাপটি দুইবার চালু করতে পারে বা থ্রেড ব্যবস্থাপনায় সমস্যা করতে পারে।
-    print("Starting Flask server...")
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    # ভিডিও ডাউনলোড এবং স্ট্রিমিং ম্যানেজ করার জন্য ব্যাকগ্রাউন্ড থ্রেড চালু করুন
+    stream_manager_thread = threading.Thread(target=manage_downloads_and_stream, daemon=True)
+    stream_manager_thread.start()
 
-    # অ্যাপ বন্ধ হওয়ার সময় FFmpeg প্রসেস বন্ধ করার চেষ্টা করা (যদিও এটি সবসময় কাজ নাও করতে পারে)
-    # @atexit মডিউল ব্যবহার করা যেতে পারে অথবা ম্যানুয়ালি সিগন্যাল হ্যান্ডেল করা যেতে পারে
-    import atexit
-    atexit.register(stop_streaming_process)
+    # ফ্লাস্ক ডেভেলপমেন্ট সার্ভার চালু করুন
+    # প্রোডাকশনের জন্য Gunicorn বা uWSGI ব্যবহার করুন
+    logging.info("ফ্লাস্ক সার্ভার http://0.0.0.0:80 তে চালু হচ্ছে")
+    # debug=False এবং use_reloader=False থ্রেড এবং সাবপ্রসেসের সাথে ব্যবহারের জন্য গুরুত্বপূর্ণ
+    app.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
+
+    # অ্যাপ বন্ধ হওয়ার সময় (যদিও ডেমন থ্রেড এবং app.run() এটিকে জটিল করে তোলে)
+    logging.info("ফ্লাস্ক সার্ভার বন্ধ হয়েছে। রিসোর্স ক্লিনআপ করা হচ্ছে...")
+    stop_event.set() # নিশ্চিত করুন যে থ্রেড বন্ধ হওয়ার সিগন্যাল পেয়েছে
+    stop_ffmpeg_stream()
+    if stream_manager_thread.is_alive():
+        stream_manager_thread.join(timeout=5) # থ্রেড শেষ হওয়ার জন্য অপেক্ষা করুন
+    logging.info("অ্যাপ্লিকেশন বন্ধ হয়েছে।")
