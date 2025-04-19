@@ -2,17 +2,15 @@ import os
 import subprocess
 import threading
 import time
-import signal
 import requests
-import re # রেগুলার এক্সপ্রেশন ব্যবহারের জন্য
-import collections # deque ব্যবহারের জন্য
-from flask import Flask, render_template, send_from_directory, abort
-from flask_cors import CORS
+from flask import Flask, render_template, send_from_directory, Response
+import logging
+import signal # সিগন্যাল হ্যান্ডেল করার জন্য
 
 # --- কনফিগারেশন ---
-VIDEO_URLS = [
-    "https://video-fra3-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQOY4fMfQQNsW-ZUVFXxHTm39PI1pROqwbPofqDUUF1gm8uaZc0dz2pnhDGnEiCl6clsoW_K_t_6ZC-5r-8b51-c.mp4?strext=1&_nc_cat=101&_nc_sid=5e9851&_nc_ht=video-fra3-1.xx.fbcdn.net&_nc_ohc=GdYUyRVIcbgQ7kNvwEip_3Y&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNTc2LmRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHAiLCJ4cHZfYXNzZXRfaWQiOjEwNDIyMTg5ODc3NTc2NTEsInZpX3VzZWNhc2VfaWQiOjEwMTIyLCJkdXJhdGlvbl9zIjo2OSwidXJsZ2VuX3NvdXJjZSI6Ind3dyJ9&ccb=17-1&vs=723b4f56308343e1&_nc_vs=HBksFQIYOnBhc3N0aHJvdWdoX2V2ZXJzdG9yZS9HT2pWT1IzaWtCVUtDbzBEQU1VNHJrMVFPbXNmYm1kakFBQUYVAALIAQAVAhg6cGFzc3Rocm91Z2hfZXZlcnN0b3JlL0dDeHNIaDAxRzMtTUoxMENBSi1DYmJGOXJlWXFickZxQUFBRhUCAsgBACgAGAAbAogHdXNlX29pbAExEnByb2dyZXNzaXZlX3JlY2lwZQExFQAAJqaB2ciQ-dkDFQIoAkMzLBdAUXd87ZFocxgZZGFzaF9oMjY0LWJhc2ljLWdlbjJfNzIwcBEAdQIA&_nc_zt=28&oh=00_AfFNaL9V0zY7vP-3hEMLbJWTnsL8CavMenvKug9oJ11W6Q&oe=680994C5&dl=1",
-    "https://video-lax3-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQPGDN71PyrUR_izj6iGuJu_PykflRlRdDnXIk_U2uPGiTDpw8JIbvWTzAi31EcxqyQZ2080Y-AWe-kq6ydx4_lP.mp4?strext=1&_nc_cat=108&_nc_sid=5e9851&_nc_ht=video-lax3-1.xx.fbcdn.net&_nc_ohc=dTByeKQDJpwQ7kNvwGTqtPN&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuOTYwLmRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHAiLCJ4cHZfYXNzZXRfaWQiOjQ2MDU4MTkyOTk1NDkzMywidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjY4NiwidXJsZ2VuX3NvdXJjZSI6Ind3dyJ9&ccb=17-1&vs=fcbb29a4927b8e91&_nc_vs=HBksFQIYOnBhc3N0aHJvdWdoX2V2ZXJzdG9yZS9HQWlsWnh4LWxpWUNHNVFEQUZFck0xdGcyRXdBYm1kakFBQUYVAALIAQAVAhg6cGFzc3Rocm91Z2hfZXZlcnN0b3JlL0dBdFRBeHJtX2FqU1MzY0RBT2dCcWV4UXZaeDVidjRHQUFBRhUCAsgBACgAGAAbAogHdXNlX29pbAExEnByb2dyZXNzaXZlX3JlY2lwZQExFQAAJuq5meWyudEBFQIoAkMzLBdAhXOFHrhR7BgZZGFzaF9oMjY0LWJhc2ljLWdlbjJfNzIwcBEAdQIA&_nc_zt=28&oh=00_AfH6U8t1LY-c_kEUA2TbVs-ug57-iKPUhq-B4uijAOfGzA&oe=6809A106&dl=1",
+# আপনার ৫টি ভিডিওর আসল লিঙ্ক এখানে যোগ করুন
+VIDEO_LINKS = [
+    "https://video-gru2-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQNz0zSpUBK5t5pu3JkErharuTv0WRZxvPeoTSGFjDBm_C4t2Or8fdX8xBlQJFq6iiFA4AQ1o2KfbLEnE050MD-f.mp4?strext=1&_nc_cat=107&_nc_sid=5e9851&_nc_ht=video-gru2-1.xx.fbcdn.net&_nc_ohc=MYgestNRyDMQ7kNvwHy_kSX&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuMTE1Mi5kYXNoX2gyNjQtYmFzaWMtZ2VuMl83MjBwIiwieHB2X2Fzc2V0X2lkIjoyNDM0Njc3ODExODI1NTU3NSwidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjI2NzcsInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&vs=d717508f1df09c38&_nc_vs=HBksFQIYOnBhc3N0aHJvdWdoX2V2ZXJzdG9yZS9HSUNXbUFBM2kweDRXT1FCQUF5RXRWenpzb3BwYm1kakFBQUYVAALIAQAVAhg6cGFzc3Rocm91Z2hfZXZlcnN0b3JlL0dQSmlLeDA1eTBadmw2TURBR3l0dWFBNVVjMDVickZxQUFBRhUCAsgBACgAGAAbAogHdXNlX29pbAExEnByb2dyZXNzaXZlX3JlY2lwZQExFQAAJq7Pz9KA0b9WFQIoAkMzLBdApOrul41P3xgZZGFzaF9oMjY0LWJhc2ljLWdlbjJfNzIwcBEAdQIA&_nc_zt=28&oh=00_AfGYFiCWahHFQefIfrywjrqFVM6JoqsFa6HKbY9BBCqI9w&oe=68097553&dl=1",
     "https://video-lax3-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQN0DwhCrb_XoX5aX_7RHBX6Jzz-9Z8PCLoOGiSXqDtEXuvTRbi_TmrLZ5SBcAvjpy5tzP9hozjSJi9xtyv8uJqk.mp4?strext=1&_nc_cat=105&_nc_sid=5e9851&_nc_ht=video-lax3-1.xx.fbcdn.net&_nc_ohc=r4oC03xBjUsQ7kNvwFv52YA&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuNzIwLmRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHAiLCJ4cHZfYXNzZXRfaWQiOjQ1NDE0Mjg5NjA5ODc0MiwiYXNzZXRfYWdlX2RheXMiOjEwMTYsInZpX3VzZWNhc2VfaWQiOjEwMTIyLCJkdXJhdGlvbl9zIjozOTgsInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&vs=a5993c3685094af8&_nc_vs=HBksFQIYOnBhc3N0aHJvdWdoX2V2ZXJzdG9yZS9HRy1TOFJ3TWppNWx2VVVDQU9SSW8wWmt3cEYxYm1kakFBQUYVAALIAQAVAhg6cGFzc3Rocm91Z2hfZXZlcnN0b3JlL0dQXzViaEUzOW53ZVlsQUJBRVdaOWNnb0ZxUlpidjRHQUFBRhUCAsgBACgAGAAbAogHdXNlX29pbAExEnByb2dyZXNzaXZlX3JlY2lwZQExFQAAJuy2_p_Mws4BFQIoAkMzLBdAeOXbItDlYBgZZGFzaF9oMjY0LWJhc2ljLWdlbjJfNzIwcBEAdQIA&_nc_zt=28&oh=00_AfHouaKEQe-HG_i1Mn0bYZEt7EHhdVKJxmnZXo-w0nl3rA&oe=6809A3E1&dl=1",
     "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
     "https://video-gru2-1.xx.fbcdn.net/o1/v/t2/f2/m69/AQNz0zSpUBK5t5pu3JkErharuTv0WRZxvPeoTSGFjDBm_C4t2Or8fdX8xBlQJFq6iiFA4AQ1o2KfbLEnE050MD-f.mp4?strext=1&_nc_cat=107&_nc_sid=5e9851&_nc_ht=video-gru2-1.xx.fbcdn.net&_nc_ohc=MYgestNRyDMQ7kNvwHy_kSX&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5GQUNFQk9PSy4uQzMuMTE1Mi5kYXNoX2gyNjQtYmFzaWMtZ2VuMl83MjBwIiwieHB2X2Fzc2V0X2lkIjoyNDM0Njc3ODExODI1NTU3NSwidmlfdXNlY2FzZV9pZCI6MTAxMjIsImR1cmF0aW9uX3MiOjI2NzcsInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&vs=d717508f1df09c38&_nc_vs=HBksFQIYOnBhc3N0aHJvdWdoX2V2ZXJzdG9yZS9HSUNXbUFBM2kweDRXT1FCQUF5RXRWenpzb3BwYm1kakFBQUYVAALIAQAVAhg6cGFzc3Rocm91Z2hfZXZlcnN0b3JlL0dQSmlLeDA1eTBadmw2TURBR3l0dWFBNVVjMDVickZxQUFBRhUCAsgBACgAGAAbAogHdXNlX29pbAExEnByb2dyZXNzaXZlX3JlY2lwZQExFQAAJq7Pz9KA0b9WFQIoAkMzLBdApOrul41P3xgZZGFzaF9oMjY0LWJhc2ljLWdlbjJfNzIwcBEAdQIA&_nc_zt=28&oh=00_AfGYFiCWahHFQefIfrywjrqFVM6JoqsFa6HKbY9BBCqI9w&oe=68097553&dl=1",
@@ -24,479 +22,271 @@ VIDEO_URLS = [
     # "আপনার ভিডিও লিঙ্ক ৫",
 ]
 VIDEO_DIR = "videos"
-STREAM_OUTPUT_DIR = "stream_output"
-FFMPEG_PLAYLIST_FILE = "playlist.txt"
-HLS_OUTPUT_FILE = os.path.join(STREAM_OUTPUT_DIR, "stream.m3u8")
-SKIPPED_VIDEOS_FILE = "skipped_videos.json" # বাদ দেওয়া ভিডিওর তালিকা সেভ করার ফাইল
+HLS_DIR = os.path.join("static", "hls")
+PLAYLIST_FILE = "playlist.txt" # FFmpeg কনক্যাটেনেশনের জন্য প্লেলিস্ট
 
-# গ্লোবাল ভেরিয়েবল
-downloaded_videos = []
-skipped_videos = set() # বাদ দেওয়া ভিডিওর সেট
-ffmpeg_process = None
-ffmpeg_monitor_thread = None
-ffmpeg_stderr_lines = collections.deque(maxlen=50) # FFmpeg এর শেষ কয়েকটি stderr লাইন রাখার জন্য
-stop_event = threading.Event()
-ffmpeg_restart_lock = threading.Lock() # একই সাথে একাধিক রিস্টার্ট এড়ানোর জন্য
-
-app = Flask(__name__)
-CORS(app)
-
-# --- ডিরেক্টরি তৈরি ---
+# ডিরেক্টরিগুলো তৈরি করুন যদি না থাকে
 os.makedirs(VIDEO_DIR, exist_ok=True)
-os.makedirs(STREAM_OUTPUT_DIR, exist_ok=True)
+os.makedirs(HLS_DIR, exist_ok=True)
 
-# --- বাদ দেওয়া ভিডিওর তালিকা লোড/সেভ ---
-def load_skipped_videos():
-    global skipped_videos
-    if os.path.exists(SKIPPED_VIDEOS_FILE):
-        try:
-            with open(SKIPPED_VIDEOS_FILE, "r") as f:
-                import json
-                skipped_paths = json.load(f)
-                skipped_videos = set(skipped_paths)
-                print(f"Loaded {len(skipped_videos)} skipped videos from {SKIPPED_VIDEOS_FILE}", flush=True)
-        except Exception as e:
-            print(f"Error loading skipped videos file: {e}", flush=True)
+# লগিং সেটআপ
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def save_skipped_videos():
-    try:
-        with open(SKIPPED_VIDEOS_FILE, "w") as f:
-            import json
-            json.dump(list(skipped_videos), f)
-        # print(f"Saved skipped videos to {SKIPPED_VIDEOS_FILE}", flush=True)
-    except Exception as e:
-        print(f"Error saving skipped videos file: {e}", flush=True)
+# --- গ্লোবাল ভেরিয়েবল ---
+ffmpeg_process = None
+available_videos = [] # ডাউনলোড হওয়া ভিডিও ফাইলের পাথ
+lock = threading.Lock() # গ্লোবাল ভেরিয়েবল অ্যাক্সেস নিয়ন্ত্রণের জন্য
+stop_event = threading.Event() # থ্রেড বন্ধ করার জন্য সিগন্যাল
 
-# --- FFmpeg প্লেলিস্ট তৈরি (বাদ দেওয়া ভিডিও ছাড়া) ---
-def create_ffmpeg_playlist():
-    """শুধুমাত্র ডাউনলোড হওয়া এবং বাদ না দেওয়া ভিডিওগুলো দিয়ে playlist.txt তৈরি করে"""
-    global skipped_videos
-    active_videos = []
-    for video_path in downloaded_videos:
-        abs_video_path = os.path.abspath(video_path)
-        if abs_video_path not in skipped_videos:
-            active_videos.append(abs_video_path)
+# --- ফ্লাস্ক অ্যাপ ---
+app = Flask(__name__)
 
-    if not active_videos:
-        print("কোনো সক্রিয় ভিডিও নেই (সবগুলো বাদ দেওয়া হতে পারে বা ডাউনলোড হয়নি)। প্লেলিস্ট খালি থাকবে।", flush=True)
-        if os.path.exists(FFMPEG_PLAYLIST_FILE):
-            try:
-                os.remove(FFMPEG_PLAYLIST_FILE)
-            except OSError as e:
-                print(f"Error removing empty playlist file: {e}", flush=True)
-        return False
+@app.route('/')
+def index():
+    """প্রধান HTML পেজ পরিবেশন করে।"""
+    return render_template('index.html')
 
-    try:
-        with open(FFMPEG_PLAYLIST_FILE, "w", encoding='utf-8') as f:
-            for video_path in active_videos:
-                # Ensure path escaping if necessary, though quotes usually handle it
-                f.write(f"file '{video_path}'\n")
-        print(f"'{FFMPEG_PLAYLIST_FILE}' তৈরি/আপডেট হয়েছে {len(active_videos)} টি সক্রিয় ভিডিও দিয়ে।", flush=True)
-        return True
-    except Exception as e:
-        print(f"প্লেলিস্ট ফাইল লিখতে ত্রুটি: {e}", flush=True)
-        return False
+# স্ট্যাটিক ফাইল (HLS সেগমেন্ট) পরিবেশনের জন্য ফ্লাস্ক ডিফল্ট রুট ব্যবহার করবে
+# /static/hls/...
 
-
-# --- FFmpeg stderr মনিটর ---
-def monitor_ffmpeg_stderr(process, stop_flag):
-    """FFmpeg এর stderr পড়ে এবং শেষ লাইনগুলো সংরক্ষণ করে"""
-    global ffmpeg_stderr_lines
-    print("FFmpeg stderr মনিটর থ্রেড চালু হয়েছে।", flush=True)
-    if process and process.stderr:
-        try:
-            # Use process.stderr directly as an iterator
-            for line_bytes in process.stderr:
-                 if stop_flag.is_set():
-                      print("Stderr মনিটর থ্রেড বন্ধ করার সিগন্যাল পেয়েছে।", flush=True)
-                      break
-                 try:
-                      decoded_line = line_bytes.decode('utf-8', errors='replace').strip()
-                      if decoded_line:
-                          # print(f"FFmpeg stderr: {decoded_line}", flush=True) # এটি খুব বেশি আউটপুট দিতে পারে
-                          ffmpeg_stderr_lines.append(decoded_line)
-                 except Exception as decode_err:
-                      print(f"Stderr লাইন ডিকোড করতে ত্রুটি: {decode_err}", flush=True)
-                      ffmpeg_stderr_lines.append(f"[DECODE ERROR] {line_bytes}")
-
-            # Ensure the stderr pipe is closed after reading finishes or stop is signalled
-            if not process.stderr.closed:
-                process.stderr.close()
-        except Exception as e:
-            # This might happen if the process terminates abruptly and the pipe breaks
-            print(f"FFmpeg stderr পড়তে গিয়ে ত্রুটি: {e}", flush=True)
-        finally:
-             # Ensure stderr is closed if loop exits for any reason other than pipe closing itself
-            if process and process.stderr and not process.stderr.closed:
-                 try:
-                     process.stderr.close()
-                 except Exception:
-                     pass # Ignore errors during cleanup closing
-    print("FFmpeg stderr মনিটর থ্রেড শেষ হয়েছে।", flush=True)
-
-
-# --- FFmpeg স্ট্রিম শুরু/পুনরায় শুরু করা ---
-def start_ffmpeg_stream(is_restart=False):
-    """বর্তমান প্লেলিস্ট ব্যবহার করে FFmpeg স্ট্রিম শুরু বা পুনরায় শুরু করে"""
-    global ffmpeg_process, ffmpeg_monitor_thread
-
-    # একই সাথে একাধিক রিস্টার্ট চেষ্টা এড়ানোর জন্য লক ব্যবহার
-    if not ffmpeg_restart_lock.acquire(blocking=False):
-         print("অন্য একটি রিস্টার্ট প্রক্রিয়া চলছে, এটি এড়িয়ে যাওয়া হচ্ছে।", flush=True)
-         return
-
-    try:
-        # যদি আগের FFmpeg প্রসেস চালু থাকে, তবে বন্ধ করুন
-        # কিন্তু যদি এটি একটি পরিকল্পিত রিস্টার্ট হয় (যেমন নতুন ভিডিও ডাউনলোডের পর)
-        # তাহলে মনিটরিং থ্রেডকে আগে বন্ধ করার সিগন্যাল দিতে হবে
-        if ffmpeg_process:
-             print("চলমান FFmpeg প্রসেস বন্ধ করা হচ্ছে...", flush=True)
-             # মনিটর থ্রেডকে সিগন্যাল দাও বন্ধ হওয়ার জন্য (যদি চালু থাকে)
-             if ffmpeg_monitor_thread and ffmpeg_monitor_thread.is_alive():
-                  # এই থ্রেডের জন্য একটি স্টপ ফ্ল্যাগ লাগবে
-                  # আপাতত সরাসরি বন্ধ করার চেষ্টা করা হচ্ছে, যা আদর্শ নয়
-                  pass # Ideally signal the monitor thread to stop cleanly before terminating ffmpeg_process
-
-             stop_ffmpeg_stream(graceful_timeout=2) # ছোট টাইমআউট দিয়ে বন্ধ করার চেষ্টা
-             ffmpeg_process = None # নিশ্চিত করুন যে এটি None সেট করা হয়েছে
-
-        # প্লেলিস্ট তৈরি করুন (বাদ দেওয়া ভিডিও ছাড়া)
-        if not create_ffmpeg_playlist():
-            print("সক্রিয় প্লেলিস্ট তৈরি করা যায়নি, FFmpeg চালু হচ্ছে না।", flush=True)
-            return # প্লেলিস্ট খালি থাকলে শুরু করবেনা
-
-        # FFmpeg কমান্ড (আগের মতই)
-        ffmpeg_command = [
-            'ffmpeg', '-hide_banner', '-loglevel', 'warning', # লগ কমানোর জন্য
-            '-re',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', FFMPEG_PLAYLIST_FILE,
-            '-c:v', 'libx264',
-            '-preset', 'veryfast', # রিসোর্স অনুযায়ী পরিবর্তন করুন
-            '-b:v', '1000k', # রিসোর্স অনুযায়ী পরিবর্তন করুন
-            '-maxrate', '1000k',
-            '-bufsize', '2000k',
-            '-g', '60',
-            '-c:a', 'aac',
-            '-b:a', '128k',
-            '-vf', 'scale=640:360',
-            '-f', 'hls',
-            '-hls_time', '4',
-            '-hls_list_size', '5',
-            '-hls_flags', 'delete_segments+omit_endlist',
-            '-hls_segment_filename', os.path.join(STREAM_OUTPUT_DIR, 'segment%03d.ts'),
-            HLS_OUTPUT_FILE
-        ]
-
-        print("FFmpeg কমান্ড:", " ".join(ffmpeg_command), flush=True)
-        try:
-            # stderr পাইপ করুন যাতে মনিটর করা যায়
-            ffmpeg_process = subprocess.Popen(ffmpeg_command, stderr=subprocess.PIPE)
-            print(f"FFmpeg প্রসেস শুরু হয়েছে (PID: {ffmpeg_process.pid})", flush=True)
-
-            # stderr মনিটর থ্রেড শুরু করুন (নতুন প্রসেসের জন্য)
-            # একটি স্টপ ফ্ল্যাগ তৈরি করুন যা এই থ্রেডকে বাইরে থেকে বন্ধ করার সিগন্যাল দিতে পারে
-            # আপাতত, থ্রেডটি প্রসেস শেষ না হওয়া পর্যন্ত চলবে বা এরর না দেওয়া পর্যন্ত
-            stderr_stop_flag = threading.Event() # এই ফ্ল্যাগটি ম্যানেজ করতে হবে
-            ffmpeg_monitor_thread = threading.Thread(target=monitor_ffmpeg_stderr, args=(ffmpeg_process, stderr_stop_flag), daemon=True)
-            ffmpeg_monitor_thread.start()
-
-        except Exception as e:
-            print(f"FFmpeg শুরু করতে ব্যর্থ: {e}", flush=True)
-            ffmpeg_process = None
-    finally:
-         ffmpeg_restart_lock.release() # লক রিলিজ করুন
-
-
-# --- FFmpeg স্ট্রিম বন্ধ করা ---
-def stop_ffmpeg_stream(graceful_timeout=5):
-    """চলমান FFmpeg প্রসেস বন্ধ করে"""
-    global ffmpeg_process
-    if ffmpeg_process:
-        pid = ffmpeg_process.pid
-        print(f"FFmpeg প্রসেস বন্ধ করা হচ্ছে (PID: {pid})...", flush=True)
-        try:
-            # প্রথমে SIGTERM পাঠান
-            ffmpeg_process.terminate()
-            ffmpeg_process.wait(timeout=graceful_timeout)
-            print(f"FFmpeg প্রসেস (PID: {pid}) সফলভাবে বন্ধ হয়েছে (terminate)।", flush=True)
-        except subprocess.TimeoutExpired:
-            print(f"FFmpeg প্রসেস (PID: {pid}) terminate হয়নি, SIGKILL পাঠানো হচ্ছে...", flush=True)
-            ffmpeg_process.kill()
-            ffmpeg_process.wait()
-            print(f"FFmpeg প্রসেস (PID: {pid}) সফলভাবে বন্ধ হয়েছে (kill)।", flush=True)
-        except Exception as e:
-            # Process might have already exited
-            print(f"FFmpeg (PID: {pid}) বন্ধ করার সময় ত্রুটি বা এটি আগে থেকেই বন্ধ ছিল: {e}", flush=True)
-        finally:
-            ffmpeg_process = None # Ensure it's None
-
-
-# --- FFmpeg প্রসেস ম্যানেজমেন্ট থ্রেড ---
-def manage_ffmpeg_process():
-    """FFmpeg প্রসেস মনিটর করে এবং এরর দিলে রিস্টার্ট করে (সমস্যাযুক্ত ফাইল বাদ দিয়ে)"""
-    global ffmpeg_process, skipped_videos
-    print("FFmpeg ম্যানেজমেন্ট থ্রেড চালু হয়েছে।", flush=True)
-
-    while not stop_event.is_set():
-        process_to_check = ffmpeg_process # Check the current global process
-        if process_to_check:
-            return_code = process_to_check.poll()
-
-            if return_code is not None: # প্রসেস শেষ হয়ে গেছে
-                # Ensure we don't act on a process that was intentionally stopped and cleared
-                if process_to_check != ffmpeg_process and ffmpeg_process is not None:
-                     # A new process might have started while we were polling the old one
-                     print("একটি নতুন FFmpeg প্রসেস ইতিমধ্যে শুরু হয়েছে, পুরনোটির সমাপ্তি উপেক্ষা করা হচ্ছে।", flush=True)
-                     time.sleep(5) # Prevent busy-looping
-                     continue
-
-                print(f"FFmpeg প্রসেস (PID: {process_to_check.pid}) কোড {return_code} দিয়ে শেষ হয়েছে।", flush=True)
-                problem_file = None
-                should_restart = True
-
-                if return_code != 0: # এরর কোড
-                    print("FFmpeg এরর দিয়ে শেষ হয়েছে। কারণ খোঁজা হচ্ছে...", flush=True)
-                    # stderr থেকে সমস্যাযুক্ত ফাইল খোঁজার চেষ্টা
-                    # এই প্যাটার্নটি আরও উন্নত করা দরকার হতে পারে
-                    error_pattern = re.compile(r".*([\"']?(/[^/ '\" M]+)+/(video_\d+\.(?:mp4|mkv|avi))[\"']?).*(?:Error|Invalid data|Conversion failed|Cannot open)", re.IGNORECASE)
-                    stderr_snapshot = list(ffmpeg_stderr_lines)
-                    # print(f"Stderr স্ন্যাপশট ({len(stderr_snapshot)} লাইন): {stderr_snapshot}", flush=True)
-
-                    for line in reversed(stderr_snapshot): # শেষ থেকে দেখুন
-                        match = error_pattern.search(line)
-                        if match and match.group(1):
-                            try:
-                                found_path = match.group(1).strip("'\"")
-                                abs_found_path = os.path.abspath(found_path)
-
-                                # চেক করুন এটি আমাদের ডাউনলোড করা ভিডিওগুলোর মধ্যে একটি কিনা
-                                for video_path in downloaded_videos:
-                                    if os.path.abspath(video_path) == abs_found_path:
-                                        problem_file = video_path
-                                        break # ফাইল পাওয়া গেছে
-                                if problem_file:
-                                    break # ভেতরের লুপ থেকেও বের হন
-                            except Exception as e:
-                                print(f"এরর লাইন পার্সিং এ সমস্যা: {e}", flush=True)
-
-
-                    if problem_file:
-                        abs_problem_file = os.path.abspath(problem_file)
-                        if abs_problem_file not in skipped_videos:
-                             print(f"সম্ভাব্য সমস্যাযুক্ত ফাইল সনাক্ত: {problem_file}। বাদ দেওয়ার তালিকায় যোগ করা হচ্ছে।", flush=True)
-                             skipped_videos.add(abs_problem_file)
-                             save_skipped_videos() # ফাইল সেভ করুন
-                        else:
-                             print(f"ফাইল {problem_file} আগে থেকেই বাদ দেওয়া তালিকায় ছিল।", flush=True)
-                    else:
-                        print("stderr থেকে নির্দিষ্ট সমস্যাযুক্ত ফাইল সনাক্ত করা যায়নি।", flush=True)
-
-                    # যদি প্লেলিস্ট খালি হয়ে যায় বাদ দেওয়ার পর, তাহলে রিস্টার্ট করার চেষ্টা বন্ধ করুন
-                    active_video_exists = any(os.path.abspath(v) not in skipped_videos for v in downloaded_videos)
-                    if not active_video_exists:
-                         print("কোনো সক্রিয় ভিডিও অবশিষ্ট নেই। FFmpeg রিস্টার্ট করা হবে না।", flush=True)
-                         should_restart = False
-
-                else:
-                    # কোড 0 মানে স্বাভাবিকভাবে শেষ হয়েছে (যা আমাদের লুপে অপ্রত্যাশিত)
-                    print("FFmpeg স্বাভাবিকভাবে শেষ হয়েছে (অপ্রত্যাশিত)। রিস্টার্ট করা হচ্ছে...", flush=True)
-
-                # এখানে ffmpeg_process কে None সেট করা গুরুত্বপূর্ণ যাতে start_ffmpeg_stream আবার শুরু করতে পারে
-                ffmpeg_process = None
-                # stderr মনিটর থ্রেড স্বাভাবিকভাবেই শেষ হওয়ার কথা যখন প্রসেস শেষ হয়
-
-                if should_restart and not stop_event.is_set():
-                    print("FFmpeg রিস্টার্ট করার চেষ্টা করা হচ্ছে...", flush=True)
-                    # রিস্টার্ট করার আগে একটু অপেক্ষা করা ভালো হতে পারে
-                    time.sleep(2)
-                    start_ffmpeg_stream(is_restart=True)
-                elif not should_restart:
-                     print("রিস্টার্ট করার দরকার নেই বা সম্ভব নয়।", flush=True)
-
-            else:
-                # প্রসেস এখনও চলছে, কিছুক্ষণ পর আবার চেক করুন
-                pass # নিচে sleep আছে
-
-        else:
-            # FFmpeg প্রসেস চলছে না
-            # যদি ডাউনলোড হওয়া এবং বাদ না দেওয়া ভিডিও থাকে, তাহলে শুরু করার চেষ্টা করুন
-            active_video_exists = any(os.path.abspath(v) not in skipped_videos for v in downloaded_videos)
-            if active_video_exists and not stop_event.is_set():
-                print("FFmpeg চলছে না কিন্তু সক্রিয় ভিডিও আছে। শুরু করার চেষ্টা করা হচ্ছে...", flush=True)
-                start_ffmpeg_stream(is_restart=False) # is_restart=False কারণ এটি নতুন শুরু
-            elif not active_video_exists and downloaded_videos:
-                 print("FFmpeg চলছে না এবং কোনো সক্রিয় ভিডিও নেই (সবগুলো বাদ দেওয়া হয়েছে?)", flush=True)
-
-
-        # চেক করার মধ্যে একটি নির্দিষ্ট সময় বিরতি দিন
-        time.sleep(5) # প্রতি ৫ সেকেন্ডে চেক করুন
-
-    print("FFmpeg ম্যানেজমেন্ট থ্রেড বন্ধ হচ্ছে।", flush=True)
-
-
-# --- ভিডিও ডাউনলোড ফাংশন (আগের মতই, শুধু অ্যাবসলিউট পাথ ব্যবহার নিশ্চিত করুন) ---
+# --- হেল্পার ফাংশন ---
 def download_video(url, index):
-    global downloaded_videos
+    """একটি ভিডিও ডাউনলোড করে।"""
+    filename = os.path.join(VIDEO_DIR, f"video_{index}.mp4")
+    filepath = os.path.abspath(filename) # সম্পূর্ণ পাথ নিন
+
+    # যদি ফাইল আগে থেকেই থাকে, ডাউনলোড করার দরকার নেই
+    if os.path.exists(filepath):
+        logging.info(f"ভিডিও {index+1} ({filepath}) আগে থেকেই ডাউনলোড করা আছে।")
+        return filepath
+
     try:
-        filename = f"video_{index + 1}.mp4"
-        filepath = os.path.join(VIDEO_DIR, filename)
-        abs_filepath = os.path.abspath(filepath) # অ্যাবসলিউট পাথ
-
-        # আগে থেকেই ডাউনলোড করা আছে কিনা চেক করুন (অ্যাবসলিউট পাথ দিয়ে)
-        # This check might be redundant if we populate downloaded_videos carefully at start
-        is_already_downloaded = any(os.path.abspath(v) == abs_filepath for v in downloaded_videos)
-
-        if os.path.exists(filepath) and not is_already_downloaded:
-            print(f"'{filename}' আগে থেকেই আছে কিন্তু লিস্টে নেই, যোগ করা হচ্ছে।", flush=True)
-            if abs_filepath not in skipped_videos: # যদি বাদ দেওয়া না থাকে
-                downloaded_videos.append(abs_filepath)
-                downloaded_videos.sort() # வரிசை ঠিক রাখা
-            return True # যেহেতু ফাইল আছে, ডাউনলোড সফল ধরা যায়
-
-        if is_already_downloaded:
-            # print(f"'{filename}' আগে থেকেই ডাউনলোড করা এবং লিস্টে আছে।")
-            return True # ডাউনলোড সফল ধরা যায়
-
-        if abs_filepath in skipped_videos:
-            print(f"'{filename}' বাদ দেওয়া তালিকায় আছে, ডাউনলোড করা হচ্ছে না।", flush=True)
-            return False # ডাউনলোড সফল নয় কারণ এটি বাদ দেওয়া
-
-        # ডাউনলোড প্রক্রিয়া
-        print(f"ডাউনলোড শুরু হচ্ছে: {url} -> {filepath}", flush=True)
-        response = requests.get(url, stream=True, timeout=30) # টাইমআউট যোগ করা ভালো
-        response.raise_for_status()
-
-        with open(filepath, "wb") as f:
+        logging.info(f"ভিডিও {index+1} ডাউনলোড শুরু হচ্ছে: {url}")
+        response = requests.get(url, stream=True, timeout=300) # টাইমআউট যোগ করা ভালো
+        response.raise_for_status()  # HTTP एरর চেক করুন
+        with open(filepath, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-
-        print(f"সফলভাবে ডাউনলোড হয়েছে: {filename}", flush=True)
-        if abs_filepath not in downloaded_videos:
-            downloaded_videos.append(abs_filepath)
-            downloaded_videos.sort()
-        return True
-
+        logging.info(f"ভিডিও {index+1} ডাউনলোড সম্পন্ন: {filepath}")
+        return filepath
     except requests.exceptions.RequestException as e:
-        print(f"ভিডিও ডাউনলোড ব্যর্থ ({url}): {e}", flush=True)
-        return False
+        logging.error(f"ভিডিও {index+1} ডাউনলোড ব্যর্থ ({url}): {e}")
+        # আংশিক ডাউনলোড হওয়া ফাইল মুছে ফেলুন (যদি থাকে)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError as rm_err:
+                logging.error(f"আংশিক ফাইল মুছতে ব্যর্থ ({filepath}): {rm_err}")
+        return None
     except Exception as e:
-        print(f"ভিডিও সংরক্ষণ বা অন্য কোনো ত্রুটি ({url}): {e}", flush=True)
-        return False
+        logging.error(f"ভিডিও {index+1} ডাউনলোড করার সময় অপ্রত্যাশিত ত্রুটি: {e}")
+        if os.path.exists(filepath):
+             try:
+                os.remove(filepath)
+             except OSError as rm_err:
+                logging.error(f"ত্রুটির পর ফাইল মুছতে ব্যর্থ ({filepath}): {rm_err}")
+        return None
 
-# --- ব্যাকগ্রাউন্ডে ভিডিও ডাউনলোড ---
-def background_downloader():
-    """ব্যাকগ্রাউন্ড থ্রেডে ভিডিও ডাউনলোড করে এবং প্রয়োজন হলে FFmpeg রিস্টার্ট ট্রিগার করে"""
-    print("ব্যাকগ্রাউন্ড ডাউনলোডার থ্রেড চালু হয়েছে।", flush=True)
-    initial_stream_started = False
+def manage_downloads_and_stream():
+    """ভিডিও ডাউনলোড এবং FFmpeg স্ট্রিম ম্যানেজ করে।"""
+    global available_videos, ffmpeg_process
 
-    # শুরুতে ডিস্কে থাকা ভিডিওগুলো লিস্টে যোগ করুন
-    for i in range(len(VIDEO_URLS)):
-         filename = f"video_{i + 1}.mp4"
-         filepath = os.path.join(VIDEO_DIR, filename)
-         abs_filepath = os.path.abspath(filepath)
-         if os.path.exists(filepath) and abs_filepath not in skipped_videos:
-             if abs_filepath not in downloaded_videos:
-                  downloaded_videos.append(abs_filepath)
-                  downloaded_videos.sort()
-                  print(f"ডিস্কে থাকা ভিডিও '{filename}' যোগ করা হয়েছে।", flush=True)
+    processed_indices = set() # কোন ভিডিওগুলো ইতিমধ্যে প্রসেস করা হয়েছে
 
     while not stop_event.is_set():
         new_video_added = False
-        all_videos_processed = True # Assume all are processed initially for this loop
+        current_video_paths = []
 
-        for i, url in enumerate(VIDEO_URLS):
-            if stop_event.is_set(): break
+        for i, url in enumerate(VIDEO_LINKS):
+            if i in processed_indices:
+                 # যদি আগে প্রসেস করা হয়, পাথ যোগ করুন
+                 potential_path = os.path.abspath(os.path.join(VIDEO_DIR, f"video_{i}.mp4"))
+                 if potential_path in available_videos:
+                     current_video_paths.append(potential_path)
+                 continue # পরের লিঙ্কে যান
 
-            filepath = os.path.join(VIDEO_DIR, f"video_{i + 1}.mp4")
-            abs_filepath = os.path.abspath(filepath)
+            video_path = download_video(url, i)
 
-            # যদি ডাউনলোড না হয়ে থাকে এবং বাদ দেওয়া না থাকে
-            is_in_downloaded = any(os.path.abspath(v) == abs_filepath for v in downloaded_videos)
-            if not is_in_downloaded and abs_filepath not in skipped_videos:
-                all_videos_processed = False # Still videos left to attempt download
-                print(f"ভিডিও {i+1} ডাউনলোড করার চেষ্টা করা হচ্ছে...", flush=True)
-                if download_video(url, i):
-                    print(f"নতুন ভিডিও '{os.path.basename(filepath)}' যোগ হয়েছে। FFmpeg রিস্টার্ট হতে পারে যদি প্রয়োজন হয়।", flush=True)
-                    new_video_added = True
-                    # FFmpeg রিস্টার্ট করার দায়িত্ব এখন manage_ffmpeg_process থ্রেডের
-                    # তবে আমরা এখানে প্লেলিস্ট আপডেটের জন্য একটি ইঙ্গিত দিতে পারি
-                    # create_ffmpeg_playlist() # প্লেলিস্ট আপডেট করুন (যদি FFmpeg রিস্টার্ট না করে)
-                else:
-                    # ডাউনলোড ব্যর্থ হলে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করা যেতে পারে
-                    print(f"ভিডিও {i+1} ডাউনলোড ব্যর্থ। পরের বার আবার চেষ্টা করা হবে।", flush=True)
-                    # এই URL টিকে সাময়িকভাবে এড়িয়ে যাওয়া যেতে পারে বা ব্যর্থতার কাউন্টার রাখা যেতে পারে
+            if video_path:
+                with lock:
+                    if video_path not in available_videos:
+                        available_videos.append(video_path)
+                        available_videos.sort() # ফাইল নামের ক্রমানুসারে সাজান
+                        new_video_added = True
+                        logging.info(f"প্লেলিস্টে যুক্ত হয়েছে: {video_path} (মোট: {len(available_videos)})")
+                processed_indices.add(i) # এই ইনডেক্স প্রসেস করা হয়েছে
+                current_video_paths.append(video_path)
+            else:
+                # ডাউনলোড ব্যর্থ হলে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করতে পারে
+                logging.warning(f"ভিডিও {i+1} ডাউনলোড করা যায়নি, পরে আবার চেষ্টা করা হবে।")
+                # এখানে ব্রেক না করে লুপ চলতে থাকবে, পরেরবার আবার চেষ্টা করবে
 
-        # যদি এই চক্রে নতুন কোনো ভিডিও সফলভাবে যোগ না হয় এবং সব ভিডিও প্রসেস করা হয়ে থাকে
-        if not new_video_added and all_videos_processed:
-            print("সকল ভিডিও ডাউনলোড বা স্কিপ করা সম্পন্ন। ডাউনলোডার থ্রেড নিষ্ক্রিয় হচ্ছে।", flush=True)
+        # যদি নতুন ভিডিও যোগ হয় বা 처음 স্ট্রিম শুরু করার সময়
+        if new_video_added or (not ffmpeg_process and available_videos):
+             with lock:
+                 # available_videos থেকে বর্তমান পাথগুলো নিন
+                 paths_to_stream = list(available_videos)
+
+             if paths_to_stream:
+                 logging.info(f"FFmpeg স্ট্রিম আপডেট করা হচ্ছে {len(paths_to_stream)} টি ভিডিও দিয়ে।")
+                 stop_ffmpeg_stream() # পুরানো স্ট্রিম বন্ধ করুন (যদি থাকে)
+                 start_ffmpeg_stream(paths_to_stream) # নতুন স্ট্রিম শুরু করুন
+             else:
+                 logging.info("এখনও কোনো ভিডিও স্ট্রিমিংয়ের জন্য উপলব্ধ নেই।")
+
+        # যদি সব ভিডিও প্রসেস করা হয়ে যায়, তাহলে লুপ থেকে বের হয়ে যেতে পারে বা শুধু অপেক্ষা করতে পারে
+        if len(processed_indices) == len(VIDEO_LINKS):
+            logging.info("সকল ভিডিও লিঙ্ক প্রসেস করা হয়েছে। ডাউনলোড ম্যানেজার এখন নিষ্ক্রিয় থাকবে।")
             break # লুপ থেকে বের হয়ে যান
 
-        # পরের চেকের আগে কিছুক্ষণ অপেক্ষা করুন
-        time.sleep(60) # প্রতি ১ মিনিট পর চেক করুন
+        # যদি কোনো নতুন ভিডিও যোগ না হয় এবং সবগুলো ডাউনলোড না হয়ে থাকে, কিছুক্ষণ অপেক্ষা করুন
+        if not new_video_added and len(processed_indices) < len(VIDEO_LINKS):
+             time.sleep(30) # ৩০ সেকেন্ড পর আবার চেক করুন
 
-    print("ব্যাকগ্রাউন্ড ডাউনলোডার থ্রেড শেষ হয়েছে।", flush=True)
+    logging.info("ডাউনলোড এবং স্ট্রীম ম্যানেজমেন্ট থ্রেড শেষ হচ্ছে।")
 
 
-# --- Flask Routes (আগের মতই) ---
-@app.route('/')
-def index():
-    return render_template('index.html')
+def start_ffmpeg_stream(video_files):
+    """প্রদত্ত ভিডিও ফাইলগুলো ব্যবহার করে FFmpeg স্ট্রিম শুরু করে।"""
+    global ffmpeg_process
+    if not video_files:
+        logging.warning("স্ট্রিমিংয়ের জন্য কোনো ভিডিও ফাইল নেই।")
+        return
 
-@app.route('/stream/<path:filename>')
-def stream(filename):
-    stream_path = os.path.abspath(STREAM_OUTPUT_DIR)
+    # 1. FFmpeg concat demuxer এর জন্য প্লেলিস্ট ফাইল তৈরি করুন
+    playlist_content = ""
+    for video_path in video_files:
+        # ফাইলের পাথগুলো সঠিকভাবে ফরম্যাট করুন (স্পেস বা বিশেষ অক্ষর থাকলে)
+        # 'safe 0' অপশন ব্যবহার করলে এটি সাধারণত প্রয়োজন হয় না, তবে ভালো অভ্যাস
+        escaped_path = video_path.replace("'", "'\\''") # সিঙ্গেল কোট এস্কেপ করুন
+        playlist_content += f"file '{escaped_path}'\n"
+
     try:
-        # Security check (Path Traversal)
-        requested_path = os.path.abspath(os.path.join(stream_path, filename))
-        if not requested_path.startswith(stream_path):
-             abort(404)
-        # print(f"Serving file: {requested_path}", flush=True) # ডিবাগিং
-        return send_from_directory(stream_path, filename, conditional=True) # conditional=True helps with caching
+        with open(PLAYLIST_FILE, "w", encoding='utf-8') as f:
+            f.write(playlist_content)
+        logging.info(f"{PLAYLIST_FILE} তৈরি হয়েছে {len(video_files)} টি ভিডিওর জন্য।")
+    except IOError as e:
+        logging.error(f"প্লেলিস্ট ফাইল ({PLAYLIST_FILE}) লিখতে ব্যর্থ: {e}")
+        return
+
+    # HLS ডিরেক্টরি পরিষ্কার করুন (আগের সেগমেন্ট মুছে ফেলুন)
+    logging.info(f"HLS ডিরেক্টরি পরিষ্কার করা হচ্ছে: {HLS_DIR}")
+    for filename in os.listdir(HLS_DIR):
+        if filename.endswith(('.m3u8', '.ts')):
+            try:
+                os.remove(os.path.join(HLS_DIR, filename))
+            except OSError as e:
+                logging.error(f"পুরানো HLS ফাইল মুছতে ত্রুটি ({filename}): {e}")
+
+    # 2. FFmpeg কমান্ড তৈরি করুন
+    ffmpeg_cmd = [
+        'ffmpeg',
+        '-re',                      # নেটিভ ফ্রেম রেটে ইনপুট পড়ুন (লাইভের জন্য গুরুত্বপূর্ণ)
+        '-f', 'concat',             # concat demuxer ব্যবহার করুন
+        '-safe', '0',               # প্লেলিস্টে অনিরাপদ পাথ ব্যবহারের অনুমতি দিন
+        '-stream_loop', '-1',       # প্লেলিস্টটি অসীমভাবে লুপ করুন
+        '-i', PLAYLIST_FILE,        # ইনপুট প্লেলিস্ট ফাইল
+        '-map', '0',                # ইনপুট থেকে সব স্ট্রিম ম্যাপ করুন (ভিডিও, অডিও)
+        '-c', 'copy',               # কোডেক কপি করুন (দ্রুত, কম সিপিইউ ব্যবহার; যদি ভিডিওগুলো সামঞ্জস্যপূর্ণ হয়)
+                                    # অসামঞ্জস্যপূর্ণ হলে রি-এনকোড করুন: '-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k'
+        '-f', 'hls',                # আউটপুট ফরম্যাট HLS
+        '-hls_time', '4',           # প্রতিটি সেগমেন্টের সময়কাল (সেকেন্ড)
+        '-hls_list_size', '5',      # প্লেলিস্টে সেগমেন্টের সংখ্যা
+        '-hls_flags', 'delete_segments+append_list', # পুরানো সেগমেন্ট মুছুন, নতুন যোগ করুন
+        '-hls_segment_filename', os.path.join(HLS_DIR, 'segment%03d.ts'), # সেগমেন্ট ফাইলের নাম প্যাটার্ন
+        os.path.join(HLS_DIR, 'live.m3u8') # মাস্টার প্লেলিস্ট ফাইলের নাম
+    ]
+
+    logging.info(f"FFmpeg চালু হচ্ছে: {' '.join(ffmpeg_cmd)}")
+    try:
+        # stderr লগ করার জন্য পাইপ ব্যবহার করুন
+        ffmpeg_process = subprocess.Popen(
+            ffmpeg_cmd,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL, # stdout উপেক্ষা করুন
+            text=True, # stderr টেক্সট হিসাবে ডিকোড করুন
+            bufsize=1, # লাইন বাফার্ড
+            universal_newlines=True
+        )
+        # FFmpeg এর আউটপুট লগ করার জন্য একটি ডেমন থ্রেড চালু করুন
+        stderr_thread = threading.Thread(target=log_ffmpeg_output, args=(ffmpeg_process.stderr,), daemon=True)
+        stderr_thread.start()
+        logging.info(f"FFmpeg প্রসেস শুরু হয়েছে (PID: {ffmpeg_process.pid})। {len(video_files)} টি ভিডিও লুপে স্ট্রিমিং হচ্ছে।")
+
     except FileNotFoundError:
-        # print(f"File not found: {requested_path}", flush=True) # ডিবাগিং
-        abort(404)
+        logging.error("ffmpeg কমান্ড পাওয়া যায়নি। FFmpeg ইনস্টল করা আছে এবং PATH এ আছে কিনা নিশ্চিত করুন।")
+        ffmpeg_process = None
     except Exception as e:
-         print(f"Error serving file {filename}: {e}", flush=True)
-         abort(500)
+        logging.error(f"FFmpeg চালু করতে ব্যর্থ: {e}")
+        ffmpeg_process = None
+
+def log_ffmpeg_output(pipe):
+    """FFmpeg এর stderr থেকে আউটপুট পড়ে এবং লগ করে।"""
+    try:
+        for line in iter(pipe.readline, ''):
+            # লগিং লেভেল ডিবাগ রাখুন যাতে বেশি ভার্বোস না হয়
+            logging.debug(f"FFmpeg: {line.strip()}")
+        pipe.close()
+    except Exception as e:
+        logging.error(f"FFmpeg আউটপুট পড়তে ত্রুটি: {e}")
+    logging.info("FFmpeg আউটপুট মনিটরিং থ্রেড শেষ হয়েছে।")
 
 
-# --- অ্যাপ্লিকেশন বন্ধ করার হ্যান্ডলার ---
-def signal_handler(sig, frame):
-    print("\nবন্ধ করার সিগন্যাল পাওয়া গেছে...", flush=True)
-    stop_event.set() # সব থ্রেডকে বন্ধ করার সিগন্যাল দিন
-    # মনিটর থ্রেড এবং ডাউনলোডার থ্রেড stop_event দেখে বন্ধ হবে
-    # FFmpeg প্রসেস বন্ধ করুন
-    stop_ffmpeg_stream()
-    print("অ্যাপ্লিকেশন বন্ধ হচ্ছে।", flush=True)
-    exit(0)
+def stop_ffmpeg_stream():
+    """চলমান FFmpeg প্রসেসটি সাবধানে বন্ধ করে।"""
+    global ffmpeg_process
+    if ffmpeg_process and ffmpeg_process.poll() is None:
+        logging.info(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) বন্ধ করার চেষ্টা চলছে...")
+        try:
+            # প্রথমে SIGTERM পাঠান যাতে নিজে থেকে বন্ধ হতে পারে
+            ffmpeg_process.terminate()
+            # নির্দিষ্ট সময় পর্যন্ত অপেক্ষা করুন
+            ffmpeg_process.wait(timeout=10)
+            logging.info(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) বন্ধ হয়েছে।")
+        except subprocess.TimeoutExpired:
+            logging.warning(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) নিজে থেকে বন্ধ হয়নি। SIGKILL পাঠানো হচ্ছে।")
+            ffmpeg_process.kill()
+            ffmpeg_process.wait() # kill করার পর অপেক্ষা করুন
+            logging.info(f"FFmpeg প্রসেস (PID: {ffmpeg_process.pid}) kill করা হয়েছে।")
+        except Exception as e:
+             logging.error(f"FFmpeg প্রসেস বন্ধ করতে ত্রুটি: {e}")
+        ffmpeg_process = None
+    elif ffmpeg_process:
+         # যদি প্রসেস আগে থেকেই বন্ধ হয়ে গিয়ে থাকে
+         logging.info("FFmpeg প্রসেস আগে থেকেই বন্ধ ছিল।")
+         ffmpeg_process = None
 
 
-# --- প্রধান চালক ---
+# --- সিগন্যাল হ্যান্ডলার ---
+def signal_handler(signum, frame):
+    """অ্যাপ্লিকেশন বন্ধ করার সিগন্যাল হ্যান্ডেল করে।"""
+    logging.info("বন্ধ করার সিগন্যাল পাওয়া গেছে। অ্যাপ্লিকেশন বন্ধ করা হচ্ছে...")
+    stop_event.set() # ব্যাকগ্রাউন্ড থ্রেডকে বন্ধ হতে বলুন
+    stop_ffmpeg_stream() # FFmpeg বন্ধ করুন
+    # প্রয়োজনে অন্যান্য রিসোর্স ক্লিনআপ করুন
+    # sys.exit(0) # প্রস্থান করুন (Flask এটি নিজে হ্যান্ডেল করতে পারে)
+
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C হ্যান্ডেল করুন
+signal.signal(signal.SIGTERM, signal_handler) # ডকার স্টপ হ্যান্ডেল করুন
+
+# --- প্রধান এক্সিকিউশন ---
 if __name__ == '__main__':
-    print("অ্যাপ্লিকেশন চালু হচ্ছে...", flush=True)
-    load_skipped_videos() # শুরুতে বাদ দেওয়া ভিডিওর তালিকা লোড করুন
+    logging.info("লাইভ স্ট্রিম অ্যাপ্লিকেশন চালু হচ্ছে...")
 
-    # সিগন্যাল হ্যান্ডলার সেট করুন
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # ভিডিও ডাউনলোড এবং স্ট্রিমিং ম্যানেজ করার জন্য ব্যাকগ্রাউন্ড থ্রেড চালু করুন
+    stream_manager_thread = threading.Thread(target=manage_downloads_and_stream, daemon=True)
+    stream_manager_thread.start()
 
-    # ব্যাকগ্রাউন্ড ডাউনলোডার থ্রেড শুরু করুন
-    downloader_thread = threading.Thread(target=background_downloader, daemon=True)
-    downloader_thread.start()
+    # ফ্লাস্ক ডেভেলপমেন্ট সার্ভার চালু করুন
+    # প্রোডাকশনের জন্য Gunicorn বা uWSGI ব্যবহার করুন
+    logging.info("ফ্লাস্ক সার্ভার http://0.0.0.0:80 তে চালু হচ্ছে")
+    # debug=False এবং use_reloader=False থ্রেড এবং সাবপ্রসেসের সাথে ব্যবহারের জন্য গুরুত্বপূর্ণ
+    app.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
 
-    # FFmpeg ম্যানেজমেন্ট থ্রেড শুরু করুন
-    ffmpeg_manager = threading.Thread(target=manage_ffmpeg_process, daemon=True)
-    ffmpeg_manager.start()
-
-    # Flask অ্যাপ চালু করুন (Gunicorn ব্যবহার করা উচিত প্রোডাকশনে)
-    print("Flask অ্যাপ চালু হচ্ছে http://0.0.0.0:5000 এ...", flush=True)
-    # প্রোডাকশনের জন্য: gunicorn -w 4 -b 0.0.0.0:5000 app:app
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), threaded=True) # threaded=True ব্যবহার করা যেতে পারে, তবে gunicorn ভালো
-
-    # অ্যাপ বন্ধ হওয়ার সময় নিশ্চিত করুন যে সব বন্ধ হয়েছে
-    print("প্রধান থ্রেড শেষ হয়েছে।", flush=True)
-    stop_event.set()
-    # থ্রেডগুলো জয়েন করার জন্য অপেক্ষা করা যেতে পারে (যদি daemon=False হয়)
+    # অ্যাপ বন্ধ হওয়ার সময় (যদিও ডেমন থ্রেড এবং app.run() এটিকে জটিল করে তোলে)
+    logging.info("ফ্লাস্ক সার্ভার বন্ধ হয়েছে। রিসোর্স ক্লিনআপ করা হচ্ছে...")
+    stop_event.set() # নিশ্চিত করুন যে থ্রেড বন্ধ হওয়ার সিগন্যাল পেয়েছে
     stop_ffmpeg_stream()
+    if stream_manager_thread.is_alive():
+        stream_manager_thread.join(timeout=5) # থ্রেড শেষ হওয়ার জন্য অপেক্ষা করুন
+    logging.info("অ্যাপ্লিকেশন বন্ধ হয়েছে।")
