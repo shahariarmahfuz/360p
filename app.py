@@ -10,11 +10,11 @@ import signal # সিগন্যাল হ্যান্ডেল করা�
 # --- কনফিগারেশন ---
 # আপনার ৫টি ভিডিওর আসল লিঙ্ক এখানে যোগ করুন
 VIDEO_LINKS = [
-    "https://uc8889dcb4ceda1ab735428053e4.dl.dropboxusercontent.com/cd/0/inline/CoHeMKUfXxjA-ryvIT_mQB9uhlbi-0eWPEh-0sHueJlJSFWAZxw-b1kyQqjPOrRBSUH4uKhFsSpwzTO3lOiFxU78iRsS59lgJRvga0ZnreCwx8FLpRlGNhaJ8B8EI-mGKDG5QHIxIuUlX16HbY4lGEln/file#",
-    "https://uc010c85c2be04c7dbd9909e6ee2.dl.dropboxusercontent.com/cd/0/inline/CoEYDAIH_O7vGc2baFMPLtwYCFGX2XWTWR1d5LMSbFd-Jsw-NWTQXhqrVaDcRSB0HSJNqNgDjo7Sz7EZLAKvCqOl6sNL2_EJMaDc5T9Ssaq3tuBc6RtP_WuyqKQlGcD9UKcI6P-OwoD88qdhYrgupA0I/file#",
-    "https://uc87602be07ced6b3d4716e15e79.dl.dropboxusercontent.com/cd/0/inline/CoE2oYEYwAKKXUYcbZwFEtkHW4nRY_EMwTiAplQ_smWpGas30eTBcdAN1LZcUysP1SswJE0KdTG62bEOogFoAps9wDyPAQ-cRUn-aOvyh60m3iQy49FlVkvhn41Xw52ouXs2jPklzB_kK35vt9KlzNHb/file#",
-    "https://uc9ae11b7bab2048c1163cddbd5c.dl.dropboxusercontent.com/cd/0/inline/CoF0PCEN1_dfdnEQo5ATKMR0uhcpf5jSvPsFZP9Wfah4jFioIxAxXi_kpNRdkOZ_zJPVXJ69Fu0wwzglrtk422e3bESD-oPT3Fl1h0-_VnwvidWQJLvF2YggXB3jDi6WECjoPikN0MttmUKWF-h3YkQy/file#",
-    "https://uc9d77b1b3eed287c1a873479c10.dl.dropboxusercontent.com/cd/0/inline/CoGvUKi-WND8yhtLHqq6EAxCqve55Ov-PaxCbVmUDQN3d1cbGAKtoq8_OnJLPRRzjurEq33Mb2vaXZMiLcO2PKCEx0ODtfRDZWT4ZaKjqyF6nhtp8drSqPCK9B9JtEO-lLha1Uqk0TOejbkgf5_Jkj5r/file#",
+    "https://www.dropbox.com/scl/fi/s8o03il2frnpf6381mn9l/cb1547f1-f2f6-4800-ba60-5ea52c247a60_output.mp4?rlkey=8z838g1hcnjgztvwgumisk30s&raw=1",
+    "https://www.dropbox.com/scl/fi/h7lgwxbfeufc833ruc99p/f1f749f1-3649-4997-be00-564cf52917df_output.mp4?rlkey=69e1zralxbo4fhz7fuc33kp2t&raw=1",
+    "https://www.dropbox.com/scl/fi/m4nkkg9secnv6vc42c71k/cf47a82d-aad2-473e-806a-15ddd2f30f17_output.mp4?rlkey=tcp763qksg90tc6fhfotawpq6&raw=1",
+    "https://www.dropbox.com/scl/fi/tmp52sqcrdlauasxreixh/687e7284-8159-4e52-8662-68c94604a1f9_output.mp4?rlkey=4sq3ywoy9n2y8hep6lk90widx&raw=1",
+    "https://www.dropbox.com/scl/fi/b1emd9olu6ts1acldjtnm/b1d6119e-886f-40f1-937b-c1d7cba1c1cc_output.mp4?rlkey=2zhg0uatmwdyah79grop2i3vg&raw=1",
 ]
 VIDEO_DIR = "videos"
 HLS_DIR = os.path.join("static", "hls")
